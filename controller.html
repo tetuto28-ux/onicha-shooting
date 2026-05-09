@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<title>ONICHAシューティング リモコン</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #111;
+    font-family: "Hiragino Sans", sans-serif;
+    user-select: none;
+    position: fixed;
+  }
+  #status {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    text-align: center;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #aaa;
+    background: #1a1a1a;
+    z-index: 10;
+  }
+  #status.ok { color: #66bb6a; }
+  #status.err { color: #ef5350; }
+
+  /* コントローラー本体 */
+  #ctrl {
+    position: absolute;
+    top: 44px; bottom: 0; left: 0; right: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 移動エリア（上2/3） */
+  #move-area {
+    flex: 2;
+    position: relative;
+    background: #1a1a1a;
+    border-bottom: 2px solid #333;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #move-label {
+    color: #444;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    pointer-events: none;
+  }
+  #move-thumb {
+    position: absolute;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    background: rgba(255,107,53,0.7);
+    border: 3px solid #ff6b35;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: none;
+  }
+  #move-crosshair {
+    position: absolute;
+    width: 100%;
+    height: 3px;
+    background: rgba(255,107,53,0.15);
+    top: 50%;
+    pointer-events: none;
+  }
+
+  /* 射撃ボタン（下1/3） */
+  #shoot-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1a;
+    position: relative;
+  }
+  #shoot-btn {
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ef5350, #b71c1c);
+    border: 4px solid #ef9a9a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    box-shadow: 0 4px 20px rgba(239,83,80,0.5);
+    cursor: pointer;
+    transition: transform 0.05s, box-shadow 0.05s;
+    touch-action: none;
+  }
+  #shoot-btn.active {
+    transform: scale(0.92);
+    box-shadow: 0 2px 8px rgba(239,83,80,0.3);
+    background: radial-gradient(circle at 35% 35%, #ff8a80, #ef5350);
+  }
+  #shoot-label {
+    position: absolute;
+    bottom: 10px;
+    color: #555;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+
+  /* 未接続オーバーレイ */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 20;
+    padding: 24px;
+    text-align: center;
+  }
+  #overlay h2 { color: #fff; font-size: 20px; }
+  #overlay p  { color: #aaa; font-size: 13px; line-height: 1.6; }
+  #overlay .spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #333;
+    border-top-color: #ff6b35;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="status">接続中…</div>
+
+<div id="ctrl">
+  <div id="move-area">
+    <div id="move-crosshair"></div>
+    <div id="move-label">← スライドで移動 →</div>
+    <div id="move-thumb"></div>
+  </div>
+  <div id="shoot-area">
+    <div id="shoot-btn">🔥</div>
+    <div id="shoot-label">タップ長押しで連射</div>
+  </div>
+</div>
+
+<div id="overlay">
+  <h2>ONICHAシューティング<br>リモコン</h2>
+  <div class="spinner"></div>
+  <p id="overlay-msg">ゲーム画面のQRコードから<br>アクセスしてください</p>
+</div>
+
+<script>
+(function() {
+  const params  = new URLSearchParams(location.search);
+  const peerId  = params.get('peer');
+  const statusEl  = document.getElementById('status');
+  const overlay   = document.getElementById('overlay');
+  const overlayMsg = document.getElementById('overlay-msg');
+  const moveArea  = document.getElementById('move-area');
+  const moveThumb = document.getElementById('move-thumb');
+  const shootBtn  = document.getElementById('shoot-btn');
+
+  if (!peerId) {
+    overlayMsg.textContent = 'URLが正しくありません。\nゲーム画面のQRコードから再度アクセスしてください。';
+    return;
+  }
+
+  function setStatus(msg, cls) {
+    statusEl.textContent = msg;
+    statusEl.className = cls || '';
+  }
+
+  // PeerJS読み込み
+  const script = document.createElement('script');
+  script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+  script.onload = init;
+  document.head.appendChild(script);
+
+  function init() {
+    const peer = new Peer(undefined, { debug: 0 });
+    peer.on('open', () => {
+      setStatus('ゲームに接続中…');
+      overlayMsg.textContent = 'ゲームに接続中…';
+      const conn = peer.connect(peerId, { reliable: true });
+
+      conn.on('open', () => {
+        overlay.style.display = 'none';
+        setStatus('✅ 接続完了！コントロールできます', 'ok');
+        setupControls(conn);
+      });
+
+      conn.on('error', () => {
+        setStatus('接続エラー', 'err');
+        overlayMsg.textContent = '接続に失敗しました。ゲーム画面でQRコードを再表示してください。';
+      });
+
+      conn.on('close', () => {
+        overlay.style.display = 'flex';
+        overlayMsg.textContent = '切断されました。ゲーム画面のQRを再スキャンしてください。';
+        setStatus('切断されました', 'err');
+      });
+    });
+
+    peer.on('error', () => {
+      setStatus('接続エラー', 'err');
+      overlayMsg.textContent = 'ネットワークエラーが発生しました。';
+    });
+  }
+
+  function setupControls(conn) {
+    let moveActive = false;
+
+    // 移動エリアのタッチ
+    moveArea.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      moveActive = true;
+      handleMove(e.touches[0]);
+    }, { passive: false });
+
+    moveArea.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (moveActive) handleMove(e.touches[0]);
+    }, { passive: false });
+
+    moveArea.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      moveActive = false;
+      moveThumb.style.display = 'none';
+      conn.send({ type: 'move', ratio: null });
+    }, { passive: false });
+
+    function handleMove(touch) {
+      const rect = moveArea.getBoundingClientRect();
+      const x = touch.clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, x / rect.width));
+      moveThumb.style.display = 'block';
+      moveThumb.style.left = x + 'px';
+      moveThumb.style.top  = (rect.height / 2) + 'px';
+      conn.send({ type: 'move', ratio });
+    }
+
+    // マウス対応（PC確認用）
+    let mouseDown = false;
+    moveArea.addEventListener('mousedown', (e) => {
+      mouseDown = true;
+      handleMoveM(e);
+    });
+    moveArea.addEventListener('mousemove', (e) => {
+      if (mouseDown) handleMoveM(e);
+    });
+    moveArea.addEventListener('mouseup', () => {
+      mouseDown = false;
+      moveThumb.style.display = 'none';
+      conn.send({ type: 'move', ratio: null });
+    });
+    function handleMoveM(e) {
+      const rect = moveArea.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      moveThumb.style.display = 'block';
+      moveThumb.style.left = (e.clientX - rect.left) + 'px';
+      moveThumb.style.top  = (rect.height / 2) + 'px';
+      conn.send({ type: 'move', ratio });
+    }
+
+    // 射撃ボタン
+    shootBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      shootBtn.classList.add('active');
+      conn.send({ type: 'shoot', active: true });
+    }, { passive: false });
+
+    const stopShoot = (e) => {
+      if (e) e.preventDefault();
+      shootBtn.classList.remove('active');
+      conn.send({ type: 'shoot', active: false });
+    };
+    shootBtn.addEventListener('touchend',   stopShoot, { passive: false });
+    shootBtn.addEventListener('touchcancel', stopShoot, { passive: false });
+    shootBtn.addEventListener('mousedown', () => {
+      shootBtn.classList.add('active');
+      conn.send({ type: 'shoot', active: true });
+    });
+    shootBtn.addEventListener('mouseup',   () => {
+      shootBtn.classList.remove('active');
+      conn.send({ type: 'shoot', active: false });
+    });
+  }
+})();
+</script>
+</body>
+</html>

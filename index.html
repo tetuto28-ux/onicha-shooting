@@ -1037,6 +1037,73 @@
     z-index: 11;
     box-shadow: 2px 2px 0 var(--onicha-brown);
   }
+
+  /* ===== リモートコントロール ===== */
+  #remote-btn {
+    position: absolute;
+    bottom: 70px; right: 12px;
+    width: 44px; height: 44px;
+    background: rgba(74,40,24,0.8);
+    color: #fff;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 12;
+    display: none;
+    align-items: center; justify-content: center;
+    pointer-events: auto;
+    transition: background 0.2s;
+  }
+  #remote-btn.visible { display: flex; }
+  #remote-btn.connected { background: #2e7d32; border-color: #66bb6a; }
+  #remote-modal {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.88);
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 14px;
+    padding: 24px;
+    text-align: center;
+  }
+  #remote-modal.show { display: flex; }
+  #remote-modal h3 { color: #fff; font-size: 18px; font-weight: 900; }
+  #remote-qr {
+    background: #fff;
+    padding: 10px;
+    border-radius: 10px;
+    line-height: 0;
+  }
+  #remote-qr img { display: block; border-radius: 4px; }
+  #remote-status { color: #aaa; font-size: 13px; }
+  #remote-status.ok { color: #66bb6a; font-weight: 700; }
+  #remote-peer-id { color: #71767b; font-size: 10px; word-break: break-all; max-width: 260px; }
+  #remote-close {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 10px 28px;
+    border-radius: 999px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-top: 4px;
+  }
+  #remote-indicator {
+    position: absolute;
+    top: 14px; right: 14px;
+    background: #2e7d32;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+    z-index: 12;
+    display: none;
+    pointer-events: none;
+  }
+  #remote-indicator.show { display: block; }
 </style>
 </head>
 <body>
@@ -1100,6 +1167,17 @@
   <div id="combo-display"></div>
   <div id="powerup-bar"><div id="powerup-fill"></div></div>
   <div id="ctrl-hint">スワイプで移動・タップ長押しで連射</div>
+
+  <!-- リモートコントロール -->
+  <button id="remote-btn" title="スマホでリモートコントロール">📱</button>
+  <div id="remote-indicator">📱 接続中</div>
+  <div id="remote-modal">
+    <h3>📱 スマホでコントロール</h3>
+    <div id="remote-qr"><img id="remote-qr-img" src="" width="200" height="200" alt="QRコード"></div>
+    <div id="remote-status">QRコードをスマホで読み込んでください</div>
+    <div id="remote-peer-id"></div>
+    <button id="remote-close">閉じる</button>
+  </div>
 
   <!-- 難易度選択画面 -->
   <div id="diffSelect">
@@ -1377,6 +1455,8 @@
   let keys = {};
   let touchX = null;
   let isHolding = false;   // 連射ホールド用
+  let remoteX = null;      // リモコン: 0〜1の横位置比率（null=未入力）
+  let remoteShoot = false; // リモコン: 射撃ホールド状態
   let combo = 0;           // 連続撃破数
   let comboTimer = 0;      // コンボが切れるまでの時間
   let powerupTimer = 0;    // 鬼みくじ（3連射）の残り時間
@@ -2297,17 +2377,21 @@
       }
     }
 
-    // 連射ホールド
-    if (isHolding) shoot();
+    // 連射ホールド（ローカル or リモコン）
+    if (isHolding || remoteShoot) shoot();
 
     // 残り10秒でおにっぴ援軍
     if (timeLeft <= ONIPPI_TIME && !onippiSpawned) {
       spawnOnippi();
     }
 
-    // プレイヤー移動
+    // プレイヤー移動（ローカルタッチ優先、次にリモコン、最後にキーボード）
     if (touchX !== null) {
       const dx = touchX - player.x;
+      player.x += Math.max(-PLAYER_SPEED * 1.7, Math.min(PLAYER_SPEED * 1.7, dx * 0.42));
+    } else if (remoteX !== null) {
+      const mappedX = remoteX * STAGE_W;
+      const dx = mappedX - player.x;
       player.x += Math.max(-PLAYER_SPEED * 1.7, Math.min(PLAYER_SPEED * 1.7, dx * 0.42));
     } else {
       let vx = 0;
@@ -3049,6 +3133,95 @@
     clearTimeout(showToast._tid);
     showToast._tid = setTimeout(() => t.classList.remove('show'), 3000);
   }
+
+  // ===== リモートコントロール =====
+  (function() {
+    const remoteBtn  = document.getElementById('remote-btn');
+    const remoteModal = document.getElementById('remote-modal');
+    const remoteStatus = document.getElementById('remote-status');
+    const remotePeerId = document.getElementById('remote-peer-id');
+    const remoteQrImg  = document.getElementById('remote-qr-img');
+    const remoteClose  = document.getElementById('remote-close');
+    const remoteIndicator = document.getElementById('remote-indicator');
+
+    let peer = null;
+    let conn = null;
+    let peerReady = false;
+
+    // 難易度選択画面が出たらボタン表示
+    const diffSelectEl = document.getElementById('diffSelect');
+    const diffObserver = new MutationObserver(() => {
+      if (diffSelectEl.classList.contains('show')) {
+        remoteBtn.classList.add('visible');
+      }
+    });
+    diffObserver.observe(diffSelectEl, { attributes: true, attributeFilter: ['class'] });
+
+    // ゲーム中もボタン表示し続ける
+    remoteBtn.classList.add('visible');
+
+    function loadPeerJS(cb) {
+      if (window.Peer) { cb(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+      s.onload = cb;
+      document.head.appendChild(s);
+    }
+
+    function startPeer() {
+      loadPeerJS(() => {
+        peer = new Peer(undefined, { debug: 0 });
+        peer.on('open', (id) => {
+          peerReady = true;
+          const base = location.href.replace(/[^/]*(\?.*)?$/, '');
+          const url  = base + 'controller.html?peer=' + id;
+          const qr   = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+          remoteQrImg.src = qr;
+          remotePeerId.textContent = 'ID: ' + id;
+          remoteStatus.textContent = 'QRコードをスマホで読み込んでください';
+          remoteStatus.className = '';
+        });
+        peer.on('connection', (c) => {
+          conn = c;
+          conn.on('data', (data) => {
+            if (data.type === 'move') {
+              remoteX = (data.ratio !== undefined) ? data.ratio : null;
+            } else if (data.type === 'shoot') {
+              remoteShoot = !!data.active;
+            }
+          });
+          conn.on('close', () => {
+            conn = null;
+            remoteX = null;
+            remoteShoot = false;
+            remoteBtn.classList.remove('connected');
+            remoteIndicator.classList.remove('show');
+            remoteStatus.textContent = '切断されました。再接続をお待ちしています…';
+            remoteStatus.className = '';
+          });
+          remoteBtn.classList.add('connected');
+          remoteIndicator.classList.add('show');
+          remoteStatus.textContent = '✅ 接続成功！ゲームを操作できます';
+          remoteStatus.className = 'ok';
+        });
+        peer.on('error', () => {
+          remoteStatus.textContent = '接続エラー。再度お試しください。';
+        });
+      });
+    }
+
+    remoteBtn.addEventListener('click', () => {
+      remoteModal.classList.add('show');
+      if (!peerReady) {
+        remoteStatus.textContent = '接続準備中…';
+        startPeer();
+      }
+    });
+
+    remoteClose.addEventListener('click', () => {
+      remoteModal.classList.remove('show');
+    });
+  })();
 
   // デバッグ：URLに?debugがあったらX画面スキップしていきなり難易度選択
   if (location.search.includes('debug')) {
