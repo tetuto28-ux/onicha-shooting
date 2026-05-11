@@ -1,0 +1,56 @@
+runtime:
+  timezone: "Asia/Tokyo"
+  max_videos_per_day: 3
+  min_interval_minutes: 180
+  human_review_required: true
+
+content:
+  duration_min_sec: 25
+  duration_max_sec: 50
+  resolution: "1080x1920"
+  fps: 30
+  subtitle_burn_in: true
+  ai_disclosure_label: true
+
+safety:
+  blocked_categories:
+    - medical_advice
+    - investment_advice
+    - political_attack
+    - celebrity_gossip
+    - real_person_voice_clone
+    - violence_graphic
+    - minor_appearance
+    - misinformation_prone
+  allowed_video_sources:
+    - pexels
+    - pixabay
+    - self_generated
+  allowed_audio_sources:
+    - youtube_audio_library
+    - self_licensed
+  pre_publish_checks:
+    - has_ai_disclosure
+    - has_human_review_approval
+    - all_assets_cc0_or_licensed
+    - duration_within_limits
+    - reference_safety_passed
+
+quotas:
+  youtube_api_daily_units: 9000
+  openai_daily_usd_cap: 5.0
+
+crawler:
+  target_regions:
+    - "JP"
+    - "US"
+    - "KR"
+  per_region_limit: 20
+
+voicevox:
+  base_url: "http://localhost:50021"
+  speaker_id: 1
+
+pexels:
+  orientation: "portrait"
+  per_page: 10

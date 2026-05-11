@@ -1,0 +1,69 @@
+# 海外/国内を問わず、参照元コンテンツに関する判定フロー
+# safety_filter.check_reference_safety() で参照される
+
+# 借用レベル定義
+borrow_levels:
+  safe:
+    - concept           # コンセプト・アイデア(著作権対象外)
+    - format_structure  # 構造・フォーマット
+    - editing_style     # 演出スタイル(抽象レベル)
+  caution:
+    - narration_phrasing  # ナレーションの言い回し(類似しすぎに注意)
+    - specific_examples   # 具体的な事例の引用(出典明示が必要)
+  forbidden:
+    - translated_script   # 原稿の直訳(海外でもNG: 翻訳権侵害)
+    - visual_assets       # 映像素材の流用(Content ID検知対象)
+    - audio_assets        # 音声・音楽の流用(Content ID検知対象)
+    - exact_sequence      # 構成順序の完全コピー(再利用コンテンツ判定リスク)
+
+# 言語の壁に関する真実
+language_barrier_truth:
+  myth: "海外コンテンツなら言語が違うのでパクリ判定されない"
+  reality: |
+    - Content ID(楽曲・映像)は言語無関係に動作する
+    - ベルヌ条約により海外著作物も日本国内で保護される
+    - 翻訳権は原著作者に帰属(著作権法27条)
+    - YouTubeの「再利用コンテンツ」判定は実質的類似性で見る
+    - 視聴者通報は減るが、合法になるわけではない
+  conclusion: |
+    海外参照のメリットは「学習素材として優秀」「同言語AI類似検知の回避」のみ。
+    法的リスクとポリシー違反リスクは国内参照と同等。
+
+# 判定フロー
+decision_flow:
+  step1_borrow_level_check:
+    rule: "borrow_level が forbidden のいずれかなら即ブロック"
+  step2_sequence_check:
+    rule: "sequence_identical が True ならブロック(言語不問)"
+  step3_translation_check:
+    rule: "is_translation が True ならブロック"
+  step4_originality_check:
+    rule: "originality_notes が空文字または未記載なら警告"
+  step5_traceability_check:
+    questions:
+      - "視聴者が原典動画を見たら『これパクリだ』と即座にわかるか?"
+      - "原典の投稿者が見たら『無断使用された』と感じるか?"
+    rule: "1つでもYESならredesign要求"
+
+# 参照元情報の必須フィールド定義
+reference_source_schema:
+  source_language:
+    type: string
+    allowed: ["en", "ja", "ko", "zh", "none"]
+    description: "参照元コンテンツの言語コード。完全オリジナルの場合は none"
+  borrow_level:
+    type: string
+    allowed: ["concept", "format_structure", "editing_style"]
+    description: "借用レベル。safe の3レベルのみ許可"
+  sequence_identical:
+    type: boolean
+    must_be: false
+    description: "原典との構成順序が完全一致か。必ず false でなければならない"
+  is_translation:
+    type: boolean
+    must_be: false
+    description: "原典スクリプトの翻訳か。必ず false でなければならない"
+  originality_notes:
+    type: string
+    required: true
+    description: "どこをオリジナル要素として変えたかの説明。必須記載"
