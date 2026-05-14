@@ -256,7 +256,8 @@
     position: absolute; inset: 0;
     display: none;
     flex-direction: column;
-    align-items: center; justify-content: center;
+    align-items: center; justify-content: flex-start;
+    overflow-y: auto;
     background: rgba(253,246,227,0.95);
     backdrop-filter: blur(4px);
     z-index: 20;
@@ -264,6 +265,13 @@
     padding: 24px;
   }
   #gameover.show { display: flex; }
+  /* コンテンツが収まる時は中央寄せ、短いビューポートではスクロール */
+  #gameover.show::before,
+  #gameover.show::after {
+    content: '';
+    flex: 1;
+    min-height: 0;
+  }
   .go-title {
     font-size: 24px;
     color: var(--onicha-brown);
@@ -351,10 +359,17 @@
     z-index: 22;
     display: none;
     flex-direction: column;
-    align-items: center; justify-content: center;
+    align-items: center; justify-content: flex-start;
+    overflow-y: auto;
     padding: 32px 20px;
   }
   #diffSelect.show { display: flex; }
+  #diffSelect.show::before,
+  #diffSelect.show::after {
+    content: '';
+    flex: 1;
+    min-height: 0;
+  }
   .diff-title {
     font-size: 28px;
     font-weight: 900;
@@ -1099,7 +1114,7 @@
   </div>
   <div id="combo-display"></div>
   <div id="powerup-bar"><div id="powerup-fill"></div></div>
-  <div id="ctrl-hint">スワイプで移動・タップ長押しで連射</div>
+  <div id="ctrl-hint"></div>
 
   <!-- 難易度選択画面 -->
   <div id="diffSelect">
@@ -1525,6 +1540,13 @@
       screenGame.classList.remove('kishin-mode');
     }
   }
+
+  // 操作ヒントをPC/スマホで切り替え
+  const ctrlHint = document.getElementById('ctrl-hint');
+  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  ctrlHint.textContent = isTouch
+    ? 'スワイプで移動・タップ長押しで連射'
+    : 'マウスで移動・クリック長押しで連射';
 
   // 入力
   document.addEventListener('keydown', (e) => {
