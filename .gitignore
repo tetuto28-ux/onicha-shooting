@@ -10,6 +10,18 @@
 /.next/
 /out/
 
+# ビルド成果物（Vercelビルド時に public/ にコピーされるが git 管理外）
+/public/_next/
+/public/index.html
+/public/index.txt
+/public/404.html
+/public/404/
+/public/admin/
+/public/check/
+/public/history/
+/public/purchases/
+/public/receipts/
+
 # production
 /build
 
