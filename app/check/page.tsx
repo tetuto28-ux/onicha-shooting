@@ -128,12 +128,24 @@ export default function CheckPage() {
         )}
 
         {/* ナビゲーション */}
-        <nav className="grid grid-cols-3 gap-3 pt-2">
+        <nav className="grid grid-cols-2 gap-3 pt-2">
           <Link
             href="/history"
             className="bg-white rounded-xl p-3 shadow-sm text-center text-sm font-medium text-gray-600 active:bg-gray-100"
           >
-            📋 履歴
+            📋 チェック履歴
+          </Link>
+          <Link
+            href="/receipts"
+            className="bg-white rounded-xl p-3 shadow-sm text-center text-sm font-medium text-gray-600 active:bg-gray-100"
+          >
+            🧾 レシート登録
+          </Link>
+          <Link
+            href="/purchases"
+            className="bg-white rounded-xl p-3 shadow-sm text-center text-sm font-medium text-gray-600 active:bg-gray-100"
+          >
+            📦 仕入れ履歴
           </Link>
           <Link
             href="/admin"
@@ -143,7 +155,7 @@ export default function CheckPage() {
           </Link>
           <Link
             href="/"
-            className="bg-white rounded-xl p-3 shadow-sm text-center text-sm font-medium text-gray-600 active:bg-gray-100"
+            className="bg-white col-span-2 rounded-xl p-3 shadow-sm text-center text-sm font-medium text-gray-600 active:bg-gray-100"
           >
             👤 名前変更
           </Link>

@@ -59,14 +59,48 @@ values (
 -- デフォルト設定
 insert into settings (manager_pin) values ('1234');
 
+-- レシートテーブル
+-- image_url: Supabase Storage の公開 URL を格納する
+-- （localStorage 版では base64 を image_data カラムに持つが、
+--   Supabase 移行時は Storage にアップロードして URL を保存する）
+create table if not exists receipts (
+  id uuid primary key default gen_random_uuid(),
+  image_url text,                      -- Supabase Storage URL
+  supplier_name text not null default '',
+  purchased_at date not null,
+  created_by text not null,
+  created_at timestamptz not null default now()
+);
+
+-- レシート明細テーブル
+create table if not exists receipt_items (
+  id uuid primary key default gen_random_uuid(),
+  receipt_id uuid not null references receipts(id) on delete cascade,
+  product_name text not null,
+  unit_price integer not null,
+  quantity integer not null default 1,
+  memo text not null default ''
+);
+
+-- インデックス
+create index if not exists receipt_items_receipt_id_idx on receipt_items(receipt_id);
+create index if not exists receipts_purchased_at_idx on receipts(purchased_at desc);
+
+-- Supabase Storage バケット作成（Storage タブで手動作成 or 以下の SQL）
+-- insert into storage.buckets (id, name, public) values ('receipts', 'receipts', false);
+
 -- RLS（Row Level Security）設定例
 -- 本番環境では適切なポリシーを設定してください
 alter table products enable row level security;
 alter table price_checks enable row level security;
 alter table settings enable row level security;
+alter table receipts enable row level security;
+alter table receipt_items enable row level security;
 
 -- 匿名ユーザーに読み取りを許可（MVP用）
 create policy "allow_read_products" on products for select using (true);
 create policy "allow_all_products" on products for all using (true);
 create policy "allow_all_price_checks" on price_checks for all using (true);
 create policy "allow_read_settings" on settings for select using (true);
+create policy "allow_all_receipts" on receipts for all using (true);
+create policy "allow_all_receipt_items" on receipt_items for all using (true);

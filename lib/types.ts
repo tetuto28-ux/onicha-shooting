@@ -28,3 +28,22 @@ export interface Settings {
   id: string;
   manager_pin: string;
 }
+
+export interface Receipt {
+  id: string;
+  /** base64 JPEG データ（Supabase移行後はStorage URL） */
+  image_data: string | null;
+  supplier_name: string;
+  purchased_at: string; // YYYY-MM-DD
+  created_by: string;
+  created_at: string;
+}
+
+export interface ReceiptItem {
+  id: string;
+  receipt_id: string;
+  product_name: string;
+  unit_price: number;
+  quantity: number;
+  memo: string;
+}

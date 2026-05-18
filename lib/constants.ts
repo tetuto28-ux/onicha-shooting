@@ -26,4 +26,6 @@ export const STORAGE_KEYS = {
   PRICE_CHECKS: "price_check_history",
   SETTINGS: "price_check_settings",
   STAFF_NAME: "price_check_staff_name",
+  RECEIPTS: "price_check_receipts",
+  RECEIPT_ITEMS: "price_check_receipt_items",
 } as const;
