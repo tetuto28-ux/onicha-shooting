@@ -1,4 +1,3 @@
 {
-  "buildCommand": "npm run build && cp -r out/. public",
   "outputDirectory": "public"
 }
