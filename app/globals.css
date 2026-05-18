@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  font-family: "Hiragino Sans", "ヒラギノ角ゴ Pro", "Yu Gothic", "游ゴシック",
+    sans-serif;
+}
+
+/* スマホ向けタップハイライト無効化 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 数字入力でスピナーを非表示 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
