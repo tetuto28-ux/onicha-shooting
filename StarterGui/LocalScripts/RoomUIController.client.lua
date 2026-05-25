@@ -8,7 +8,7 @@ local function hookAnomaly(instance)
     if not instance:GetAttribute("IsAnomaly") then return end
     local click = instance:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
     click.Parent = instance
-    click.MaxActivationDistance = 20
+    click.MaxActivationDistance = 100
     click.MouseClick:Connect(function()
         local roomId = instance:GetAttribute("RoomId") or 1
         local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name

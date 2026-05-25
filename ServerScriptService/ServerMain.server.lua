@@ -1,6 +1,10 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+
+local serverClickHooked = {}
+local serverTouchCooldown = {}
 
 local function makePart(parent, name, position, size, color)
     local part = parent:FindFirstChild(name) or Instance.new("Part")
@@ -38,9 +42,10 @@ local function ensureDemoWorld()
         part:SetAttribute("IsAnomaly", true)
         part:SetAttribute("RoomId", 1)
         part:SetAttribute("AnomalyName", info.name)
+        part:SetAttribute("ServerClickHooked", nil)
 
         local click = part:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
-        click.MaxActivationDistance = 20
+        click.MaxActivationDistance = 100
         click.Parent = part
     end
 end
@@ -73,6 +78,9 @@ local AntiExploitService = require(modules.AntiExploitService)
 
 local function initPlayer(player)
     local save = SaveService:Load(player)
+    if RunService:IsStudio() then
+        save.currentRoom = 1
+    end
     CoinService:InitPlayer(player, save.coins)
     RoomService:InitPlayer(player, save.currentRoom)
     UpgradeService:InitPlayer(player, save.upgrades)
@@ -126,14 +134,31 @@ end)
 local function hookServerAnomalyClick(instance)
     if not instance:IsA("BasePart") then return end
     if instance:GetAttribute("IsAnomaly") ~= true then return end
-    if instance:GetAttribute("ServerClickHooked") == true then return end
+    if serverClickHooked[instance] then return end
 
     local click = instance:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
-    click.MaxActivationDistance = 20
+    click.MaxActivationDistance = 100
     click.Parent = instance
-    instance:SetAttribute("ServerClickHooked", true)
+    serverClickHooked[instance] = true
 
     click.MouseClick:Connect(function(player)
+        local roomId = instance:GetAttribute("RoomId") or 1
+        local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
+        awardAnomaly(player, roomId, anomalyName, instance, true)
+    end)
+
+    instance.Touched:Connect(function(hit)
+        local character = hit.Parent
+        local player = character and Players:GetPlayerFromCharacter(character)
+        if not player then return end
+
+        local key = player.UserId .. ":" .. instance.Name
+        local now = os.clock()
+        if serverTouchCooldown[key] and now - serverTouchCooldown[key] < 0.5 then
+            return
+        end
+        serverTouchCooldown[key] = now
+
         local roomId = instance:GetAttribute("RoomId") or 1
         local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
         awardAnomaly(player, roomId, anomalyName, instance, true)
