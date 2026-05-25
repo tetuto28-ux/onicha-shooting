@@ -42,6 +42,7 @@ local function ensureDemoWorld()
         part:SetAttribute("IsAnomaly", true)
         part:SetAttribute("RoomId", 1)
         part:SetAttribute("AnomalyName", info.name)
+        part:SetAttribute("Reward", 10)
         part:SetAttribute("ServerClickHooked", nil)
 
         local click = part:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
