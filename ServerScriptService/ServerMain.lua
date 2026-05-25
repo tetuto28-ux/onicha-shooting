@@ -35,9 +35,19 @@ end)
 AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, anomalyInstance)
     if AntiExploitService:IsOnCooldown(player, "find") then return end
     if not AntiExploitService:ValidateAnomalyRequest(anomalyInstance) then return end
-    local first, count = RoomService:MarkFound(player, roomId, anomalyName)
+    if not AntiExploitService:IsPlayerNearInstance(player, anomalyInstance, 35) then return end
+
+    local canonicalRoomId = tonumber(anomalyInstance:GetAttribute("RoomId")) or 1
+    local canonicalAnomalyName = anomalyInstance:GetAttribute("AnomalyName") or anomalyInstance.Name
+
+    if canonicalRoomId ~= roomId then return end
+    if canonicalAnomalyName ~= anomalyName then return end
+    if not RoomService:IsCurrentRoom(player, roomId) then return end
+    if not RoomService:IsValidAnomalyForRoom(player, roomId, canonicalAnomalyName) then return end
+
+    local first, count = RoomService:MarkFound(player, roomId, canonicalAnomalyName)
     if not first then return end
-    local reward, isRare = AnomalyService:GetReward(anomalyName)
+    local reward, isRare = AnomalyService:GetReward(canonicalAnomalyName)
     CoinService:AddCoins(player, reward)
     UIMessageEvent:FireClient(player, {kind = "Found", text = "見つけた！ +" .. reward, found = count, isRare = isRare})
     if isRare then
@@ -82,4 +92,16 @@ Players.PlayerRemoving:Connect(function(player)
         currentRoom = RoomService:GetCurrentRoom(player),
         upgrades = UpgradeService.Purchased[player] or {},
     })
+    RoomService:CleanupPlayer(player)
+    UpgradeService:CleanupPlayer(player)
+end)
+
+game:BindToClose(function()
+    for _, player in ipairs(Players:GetPlayers()) do
+        SaveService:Save(player, {
+            coins = CoinService:GetCoins(player),
+            currentRoom = RoomService:GetCurrentRoom(player),
+            upgrades = UpgradeService.Purchased[player] or {},
+        })
+    end
 end)

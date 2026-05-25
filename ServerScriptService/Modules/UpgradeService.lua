@@ -21,4 +21,8 @@ function UpgradeService:Purchase(player, upgradeId, coinService)
     return true, info
 end
 
+function UpgradeService:CleanupPlayer(player)
+    self.Purchased[player] = nil
+end
+
 return UpgradeService
