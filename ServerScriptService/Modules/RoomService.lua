@@ -33,6 +33,33 @@ function RoomService:MarkFound(player, roomId, anomalyName)
     return true, count
 end
 
+function RoomService:IsCurrentRoom(player, roomId)
+    local state = self.State[player]
+    if not state then return false end
+    return state.currentRoom == roomId
+end
+
+function RoomService:IsValidAnomalyForRoom(player, roomId, anomalyName)
+    local roomKey = self:GetRoomKeyById(roomId)
+    local room = RoomData[roomKey]
+    if not room then return false end
+
+    for _, baseName in ipairs(room.anomalies) do
+        if baseName == anomalyName then
+            return true
+        end
+    end
+
+    local extras = self.State[player] and self.State[player].extraAnomalies[roomId] or {}
+    for _, extraName in ipairs(extras) do
+        if extraName == anomalyName then
+            return true
+        end
+    end
+
+    return false
+end
+
 function RoomService:IsRoomCleared(player, roomId)
     local roomKey = self:GetRoomKeyById(roomId)
     local base = RoomData[roomKey]
@@ -55,6 +82,10 @@ function RoomService:AddGeneratedAnomaly(player, roomId, anomalyName)
     local state = self.State[player]
     state.extraAnomalies[roomId] = state.extraAnomalies[roomId] or {}
     table.insert(state.extraAnomalies[roomId], anomalyName)
+end
+
+function RoomService:CleanupPlayer(player)
+    self.State[player] = nil
 end
 
 return RoomService
