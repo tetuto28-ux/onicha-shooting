@@ -1,0 +1,21 @@
+{
+  "name": "onicha-shooting",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$path": "ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$path": "ServerScriptService"
+    },
+    "StarterGui": {
+      "$path": "StarterGui"
+    },
+    "Workspace": {
+      "$path": "Workspace"
+    },
+    "ServerStorage": {
+      "$path": "ServerStorage"
+    }
+  }
+}
