@@ -27,7 +27,7 @@ local function ensureLabel(name, position, size, text)
     end
     label.Position = position
     label.Size = size
-    label.Text = label.Text ~= "" and label.Text or text
+    label.Text = text
     return label
 end
 
@@ -64,7 +64,7 @@ UIMessageEvent.OnClientEvent:Connect(function(payload)
         roomDisplay.Text = string.format("Room: %03d", payload.room)
     end
     if payload.found then
-        foundCounter.Text = "Found: " .. tostring(payload.found) .. "/3+"
+        foundCounter.Text = "Found: " .. tostring(payload.found) .. "/3"
     end
     if payload.text then
         messageDisplay.Text = payload.text

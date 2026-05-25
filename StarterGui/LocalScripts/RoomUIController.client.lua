@@ -12,6 +12,7 @@ local function hookAnomaly(instance)
     click.MouseClick:Connect(function()
         local roomId = instance:GetAttribute("RoomId") or 1
         local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
+        instance.Transparency = 0.45
         AnomalyFoundEvent:FireServer(roomId, anomalyName, instance)
     end)
 end
