@@ -3,11 +3,11 @@ local CoinService = {}
 local DEFAULT_COINS = 0
 
 function CoinService:InitPlayer(player, savedCoins)
-    local leaderstats = Instance.new("Folder")
+    local leaderstats = player:FindFirstChild("leaderstats") or Instance.new("Folder")
     leaderstats.Name = "leaderstats"
     leaderstats.Parent = player
 
-    local coins = Instance.new("IntValue")
+    local coins = leaderstats:FindFirstChild("Coins") or Instance.new("IntValue")
     coins.Name = "Coins"
     coins.Value = math.max(0, tonumber(savedCoins) or DEFAULT_COINS)
     coins.Parent = leaderstats

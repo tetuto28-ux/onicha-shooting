@@ -71,13 +71,19 @@ local UpgradeService = require(modules.UpgradeService)
 local SaveService = require(modules.SaveService)
 local AntiExploitService = require(modules.AntiExploitService)
 
-Players.PlayerAdded:Connect(function(player)
+local function initPlayer(player)
     local save = SaveService:Load(player)
     CoinService:InitPlayer(player, save.coins)
     RoomService:InitPlayer(player, save.currentRoom)
     UpgradeService:InitPlayer(player, save.upgrades)
     UIMessageEvent:FireClient(player, {kind = "RoomStart", text = "違和感を3つ探せ！", room = RoomService:GetCurrentRoom(player)})
-end)
+end
+
+Players.PlayerAdded:Connect(initPlayer)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    task.spawn(initPlayer, player)
+end
 
 AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, anomalyInstance)
     if AntiExploitService:IsOnCooldown(player, "find") then return end

@@ -46,15 +46,31 @@ local roomDisplay = gui:WaitForChild("RoomDisplay")
 local messageDisplay = gui:WaitForChild("MessageDisplay")
 local foundCounter = gui:WaitForChild("FoundCounter")
 
+local coinConnection
+
 local function refreshCoins()
     local stats = player:FindFirstChild("leaderstats")
     local coins = stats and stats:FindFirstChild("Coins")
     coinDisplay.Text = "Coins: " .. tostring(coins and coins.Value or 0)
 end
 
+local function hookLeaderstats(stats)
+    local coins = stats:WaitForChild("Coins")
+    if coinConnection then
+        coinConnection:Disconnect()
+    end
+    coinConnection = coins:GetPropertyChangedSignal("Value"):Connect(refreshCoins)
+    refreshCoins()
+end
+
+local existingStats = player:FindFirstChild("leaderstats")
+if existingStats then
+    hookLeaderstats(existingStats)
+end
+
 player.ChildAdded:Connect(function(child)
     if child.Name == "leaderstats" then
-        child:WaitForChild("Coins"):GetPropertyChangedSignal("Value"):Connect(refreshCoins)
+        hookLeaderstats(child)
         refreshCoins()
     end
 end)
