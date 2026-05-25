@@ -1,0 +1,49 @@
+{
+  "$className": "ScreenGui",
+  "Name": "MainUI",
+  "ResetOnSpawn": false,
+  "IgnoreGuiInset": true,
+  "CoinDisplay": {
+    "$className": "TextLabel",
+    "BackgroundTransparency": 0.35,
+    "Size": {"X": {"Scale": 0, "Offset": 220}, "Y": {"Scale": 0, "Offset": 36}},
+    "Position": {"X": {"Scale": 0, "Offset": 12}, "Y": {"Scale": 0, "Offset": 12}},
+    "Text": "Coins: 0",
+    "TextScaled": true
+  },
+  "RoomDisplay": {
+    "$className": "TextLabel",
+    "BackgroundTransparency": 0.35,
+    "Size": {"X": {"Scale": 0, "Offset": 220}, "Y": {"Scale": 0, "Offset": 36}},
+    "Position": {"X": {"Scale": 0, "Offset": 12}, "Y": {"Scale": 0, "Offset": 54}},
+    "Text": "Room: 001",
+    "TextScaled": true
+  },
+  "FoundCounter": {
+    "$className": "TextLabel",
+    "BackgroundTransparency": 0.35,
+    "Size": {"X": {"Scale": 0, "Offset": 220}, "Y": {"Scale": 0, "Offset": 36}},
+    "Position": {"X": {"Scale": 0, "Offset": 12}, "Y": {"Scale": 0, "Offset": 96}},
+    "Text": "Found: 0/3+",
+    "TextScaled": true
+  },
+  "MessageDisplay": {
+    "$className": "TextLabel",
+    "BackgroundTransparency": 0.3,
+    "Size": {"X": {"Scale": 0.4, "Offset": 0}, "Y": {"Scale": 0, "Offset": 44}},
+    "Position": {"X": {"Scale": 0.3, "Offset": 0}, "Y": {"Scale": 0, "Offset": 12}},
+    "Text": "",
+    "Visible": false,
+    "TextScaled": true
+  },
+  "RecordingOverlay": {
+    "$className": "TextLabel",
+    "BackgroundTransparency": 0.3,
+    "Size": {"X": {"Scale": 0, "Offset": 420}, "Y": {"Scale": 0, "Offset": 44}},
+    "Position": {"X": {"Scale": 1, "Offset": -20}, "Y": {"Scale": 0, "Offset": 20}},
+    "AnchorPoint": {"X": 1, "Y": 0},
+    "Text": "Rで撮影UI ON/OFF",
+    "TextScaled": true,
+    "Visible": false
+  }
+}
