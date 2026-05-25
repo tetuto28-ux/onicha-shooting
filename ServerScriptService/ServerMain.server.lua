@@ -85,10 +85,14 @@ for _, player in ipairs(Players:GetPlayers()) do
     task.spawn(initPlayer, player)
 end
 
-AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, anomalyInstance)
-    if AntiExploitService:IsOnCooldown(player, "find") then return end
+local function awardAnomaly(player, roomId, anomalyName, anomalyInstance, skipDistanceCheck)
+    if not RoomService.State[player] then
+        initPlayer(player)
+    end
+
+    if not skipDistanceCheck and AntiExploitService:IsOnCooldown(player, "find") then return end
     if not AntiExploitService:ValidateAnomalyRequest(anomalyInstance) then return end
-    if not AntiExploitService:IsPlayerNearInstance(player, anomalyInstance, 35) then return end
+    if not skipDistanceCheck and not AntiExploitService:IsPlayerNearInstance(player, anomalyInstance, 35) then return end
 
     local canonicalRoomId = tonumber(anomalyInstance:GetAttribute("RoomId")) or 1
     local canonicalAnomalyName = anomalyInstance:GetAttribute("AnomalyName") or anomalyInstance.Name
@@ -102,6 +106,7 @@ AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, an
     if not first then return end
     local reward, isRare = AnomalyService:GetReward(canonicalAnomalyName)
     CoinService:AddCoins(player, reward)
+    anomalyInstance.Transparency = 0.45
     UIMessageEvent:FireClient(player, {kind = "Found", text = "見つけた！ +" .. reward, found = count, isRare = isRare})
     if isRare then
         UIMessageEvent:FireClient(player, {kind = "Rare", text = "レア違和感発見！"})
@@ -112,7 +117,34 @@ AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, an
         RoomClearedEvent:FireClient(player, roomId, nextRoom)
         UIMessageEvent:FireClient(player, {kind = "Clear", text = "クリア！ +50"})
     end
+end
+
+AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, anomalyInstance)
+    awardAnomaly(player, roomId, anomalyName, anomalyInstance, false)
 end)
+
+local function hookServerAnomalyClick(instance)
+    if not instance:IsA("BasePart") then return end
+    if instance:GetAttribute("IsAnomaly") ~= true then return end
+    if instance:GetAttribute("ServerClickHooked") == true then return end
+
+    local click = instance:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
+    click.MaxActivationDistance = 20
+    click.Parent = instance
+    instance:SetAttribute("ServerClickHooked", true)
+
+    click.MouseClick:Connect(function(player)
+        local roomId = instance:GetAttribute("RoomId") or 1
+        local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
+        awardAnomaly(player, roomId, anomalyName, instance, true)
+    end)
+end
+
+for _, descendant in ipairs(Workspace:GetDescendants()) do
+    hookServerAnomalyClick(descendant)
+end
+
+Workspace.DescendantAdded:Connect(hookServerAnomalyClick)
 
 GenerateAnomalyEvent.OnServerEvent:Connect(function(player)
     if AntiExploitService:IsOnCooldown(player, "generate") then return end
