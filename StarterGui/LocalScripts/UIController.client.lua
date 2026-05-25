@@ -3,40 +3,44 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local gui = playerGui:FindFirstChild("MainUI")
 
-if not gui then
-    gui = Instance.new("ScreenGui")
-    gui.Name = "MainUI"
-    gui.ResetOnSpawn = false
-    gui.Parent = playerGui
-end
+local gui = playerGui:FindFirstChild("MainUI") or Instance.new("ScreenGui")
+gui.Name = "MainUI"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
 
-local function ensureLabel(name, position, size, text)
-    local label = gui:FindFirstChild(name)
-    if not label then
-        label = Instance.new("TextLabel")
-        label.Name = name
-        label.BackgroundColor3 = Color3.fromRGB(20, 24, 32)
-        label.BackgroundTransparency = 0.15
-        label.BorderSizePixel = 0
-        label.Font = Enum.Font.GothamBold
-        label.TextColor3 = Color3.fromRGB(255, 255, 255)
-        label.TextScaled = true
-        label.Parent = gui
-    end
+local function makeLabel(name, position, size, text, textSize)
+    local label = gui:FindFirstChild(name) or Instance.new("TextLabel")
+    label.Name = name
+    label.BackgroundColor3 = Color3.fromRGB(14, 18, 28)
+    label.BackgroundTransparency = 0.12
+    label.BorderSizePixel = 0
+    label.Font = Enum.Font.GothamBold
     label.Position = position
     label.Size = size
     label.Text = text
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextSize = textSize or 28
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextWrapped = true
+    label.Parent = gui
     return label
 end
 
-ensureLabel("CoinDisplay", UDim2.new(0, 16, 0, 16), UDim2.new(0, 170, 0, 36), "Coins: 0")
-ensureLabel("RoomDisplay", UDim2.new(0, 16, 0, 58), UDim2.new(0, 170, 0, 36), "Room: 001")
-ensureLabel("FoundCounter", UDim2.new(0, 16, 0, 100), UDim2.new(0, 170, 0, 36), "Found: 0/3")
-local message = ensureLabel("MessageDisplay", UDim2.new(0.5, -220, 0, 16), UDim2.new(0, 440, 0, 44), "")
+makeLabel("TitleDisplay", UDim2.new(0, 24, 0, 86), UDim2.new(0, 330, 0, 44), "Oddity Hunt", 30)
+makeLabel("CoinDisplay", UDim2.new(0, 24, 0, 140), UDim2.new(0, 260, 0, 46), "Coins: 0", 32)
+makeLabel("RoomDisplay", UDim2.new(0, 24, 0, 194), UDim2.new(0, 260, 0, 46), "Room: 001", 32)
+makeLabel("FoundCounter", UDim2.new(0, 24, 0, 248), UDim2.new(0, 260, 0, 46), "Found: 0/3", 32)
+makeLabel("HintDisplay", UDim2.new(0, 24, 1, -80), UDim2.new(0, 560, 0, 48), "Click or touch the glowing odd objects.", 22)
+
+local message = makeLabel("MessageDisplay", UDim2.new(0.5, -260, 0, 112), UDim2.new(0, 520, 0, 56), "", 34)
+message.TextXAlignment = Enum.TextXAlignment.Center
 message.Visible = false
-ensureLabel("RecordingOverlay", UDim2.new(1, -440, 0, 16), UDim2.new(0, 420, 0, 44), "")
+
+local overlay = makeLabel("RecordingOverlay", UDim2.new(1, -470, 0, 86), UDim2.new(0, 440, 0, 52), "Recording mode: find the odd things.", 22)
+overlay.TextXAlignment = Enum.TextXAlignment.Center
+overlay.Visible = false
 
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local UIMessageEvent = remotes:WaitForChild("UIMessageEvent")
@@ -51,7 +55,9 @@ local coinConnection
 local function refreshCoins()
     local stats = player:FindFirstChild("leaderstats")
     local coins = stats and stats:FindFirstChild("Coins")
-    coinDisplay.Text = "Coins: " .. tostring(coins and coins.Value or 0)
+    if coins then
+        coinDisplay.Text = "Coins: " .. tostring(coins.Value)
+    end
 end
 
 local function hookLeaderstats(stats)
@@ -71,7 +77,6 @@ end
 player.ChildAdded:Connect(function(child)
     if child.Name == "leaderstats" then
         hookLeaderstats(child)
-        refreshCoins()
     end
 end)
 
@@ -85,12 +90,10 @@ UIMessageEvent.OnClientEvent:Connect(function(payload)
     if payload.text then
         messageDisplay.Text = payload.text
         messageDisplay.Visible = true
-        task.delay(1.8, function()
+        task.delay(2.0, function()
             if messageDisplay.Text == payload.text then
                 messageDisplay.Visible = false
             end
         end)
     end
 end)
-
-refreshCoins()
