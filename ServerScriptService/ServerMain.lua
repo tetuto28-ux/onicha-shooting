@@ -1,5 +1,51 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local function makePart(parent, name, position, size, color)
+    local part = parent:FindFirstChild(name) or Instance.new("Part")
+    part.Name = name
+    part.Anchored = true
+    part.Position = position
+    part.Size = size
+    part.Color = color
+    part.Parent = parent
+    return part
+end
+
+local function ensureDemoWorld()
+    local rooms = Workspace:FindFirstChild("Rooms") or Instance.new("Folder")
+    rooms.Name = "Rooms"
+    rooms.Parent = Workspace
+
+    local room = rooms:FindFirstChild("Room001") or Instance.new("Model")
+    room.Name = "Room001"
+    room.Parent = rooms
+
+    makePart(room, "Room001Floor", Vector3.new(0, 0, -18), Vector3.new(42, 1, 42), Color3.fromRGB(82, 91, 110))
+    makePart(room, "BackWall", Vector3.new(0, 8, -39), Vector3.new(42, 16, 1), Color3.fromRGB(155, 164, 184))
+    makePart(room, "LeftWall", Vector3.new(-21, 8, -18), Vector3.new(1, 16, 42), Color3.fromRGB(135, 145, 165))
+    makePart(room, "RightWall", Vector3.new(21, 8, -18), Vector3.new(1, 16, 42), Color3.fromRGB(135, 145, 165))
+
+    local anomalies = {
+        { name = "ReverseClock", position = Vector3.new(-10, 3, -18), color = Color3.fromRGB(255, 230, 90) },
+        { name = "CeilingChair", position = Vector3.new(0, 6, -27), color = Color3.fromRGB(90, 180, 255) },
+        { name = "MiniYatai", position = Vector3.new(10, 3, -18), color = Color3.fromRGB(255, 120, 120) },
+    }
+
+    for _, info in ipairs(anomalies) do
+        local part = makePart(room, info.name, info.position, Vector3.new(4, 4, 4), info.color)
+        part:SetAttribute("IsAnomaly", true)
+        part:SetAttribute("RoomId", 1)
+        part:SetAttribute("AnomalyName", info.name)
+
+        local click = part:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
+        click.MaxActivationDistance = 20
+        click.Parent = part
+    end
+end
+
+ensureDemoWorld()
 
 local function ensureRemote(name)
     local remotes = ReplicatedStorage:FindFirstChild("Remotes") or Instance.new("Folder")

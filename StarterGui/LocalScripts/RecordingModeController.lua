@@ -2,8 +2,15 @@ local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-local gui = player:WaitForChild("PlayerGui"):WaitForChild("MainUI")
-local overlay = gui:WaitForChild("RecordingOverlay")
+local gui = player:WaitForChild("PlayerGui"):WaitForChild("MainUI", 10)
+if not gui then return end
+
+local overlay = gui:FindFirstChild("RecordingOverlay")
+if not overlay then
+    overlay = Instance.new("TextLabel")
+    overlay.Name = "RecordingOverlay"
+    overlay.Parent = gui
+end
 
 overlay.Visible = false
 overlay.Text = "この部屋の違和感、見つけられる？ (Rで撮影UI ON/OFF)"
