@@ -2,15 +2,42 @@ local DataStoreService = game:GetService("DataStoreService")
 local RunService = game:GetService("RunService")
 
 local SaveService = {}
-local store = DataStoreService:GetDataStore("IWAKAN_HOTEL_MVP_V1")
+
+local STORE_NAME = "IWAKAN_HOTEL_MVP_V1"
+local store = nil
+local storeResolved = false
 
 local function defaultPayload()
     return {coins = 0, currentRoom = 1, upgrades = {}}
 end
 
+-- Resolve the DataStore lazily. In an unpublished Studio place (or with
+-- "Studio Access to API Services" disabled) GetDataStore throws, so we swallow
+-- the error and run the game without saving instead of crashing the server.
+local function getStore()
+    if storeResolved then
+        return store
+    end
+    storeResolved = true
+    local ok, result = pcall(function()
+        return DataStoreService:GetDataStore(STORE_NAME)
+    end)
+    if ok then
+        store = result
+    else
+        store = nil
+        warn("[SaveService] DataStore unavailable, progress will not be saved: " .. tostring(result))
+    end
+    return store
+end
+
 function SaveService:Load(player)
+    local ds = getStore()
+    if not ds then
+        return defaultPayload()
+    end
     local ok, data = pcall(function()
-        return store:GetAsync("p_" .. player.UserId)
+        return ds:GetAsync("p_" .. player.UserId)
     end)
     if ok and type(data) == "table" then
         return data
@@ -22,10 +49,14 @@ function SaveService:Load(player)
 end
 
 function SaveService:Save(player, payload)
+    local ds = getStore()
+    if not ds then
+        return false
+    end
     local maxAttempts = 3
     for attempt = 1, maxAttempts do
         local ok, err = pcall(function()
-            store:SetAsync("p_" .. player.UserId, payload)
+            ds:SetAsync("p_" .. player.UserId, payload)
         end)
         if ok then
             return true
