@@ -454,7 +454,8 @@ local function createAnomaly(room, config, info)
     return primary
 end
 
-local function buildWorld()
+-- Lighting / atmosphere is cosmetic: never let it block the rooms from building.
+local function applyLighting()
     Lighting.ClockTime = 15
     Lighting.Brightness = 2
     Lighting.Ambient = Color3.fromRGB(120, 128, 150)
@@ -471,6 +472,13 @@ local function buildWorld()
     atmosphere.Color = Color3.fromRGB(199, 205, 220)
     atmosphere.Decay = Color3.fromRGB(106, 112, 135)
     atmosphere.Parent = Lighting
+end
+
+local function buildWorld()
+    local okLight, errLight = pcall(applyLighting)
+    if not okLight then
+        warn("[buildWorld] lighting setup failed (continuing): " .. tostring(errLight))
+    end
 
     local oldDemo = Workspace:FindFirstChild("OnichaShootingDemo")
     if oldDemo then
@@ -492,14 +500,23 @@ local function buildWorld()
     roomsFolder.Name = "Rooms"
     roomsFolder.Parent = root
 
+    -- Build each room defensively: a bug in one anomaly must not blank the
+    -- whole world. Failures are reported to the Output window.
     for _, config in ipairs(roomConfigs) do
         local room = Instance.new("Model")
         room.Name = string.format("Room%03d", config.id)
         room.Parent = roomsFolder
 
-        decorateRoom(room, config)
+        local okDecor, errDecor = pcall(decorateRoom, room, config)
+        if not okDecor then
+            warn(string.format("[buildWorld] decorateRoom failed for room %d: %s", config.id, tostring(errDecor)))
+        end
+
         for _, info in ipairs(config.anomalies) do
-            createAnomaly(room, config, info)
+            local okAnomaly, errAnomaly = pcall(createAnomaly, room, config, info)
+            if not okAnomaly then
+                warn(string.format("[buildWorld] createAnomaly failed for %s: %s", tostring(info.name), tostring(errAnomaly)))
+            end
         end
     end
 end
@@ -687,7 +704,10 @@ local function hookServerAnomalyClick(instance)
     end)
 end
 
-buildWorld()
+local okWorld, errWorld = pcall(buildWorld)
+if not okWorld then
+    warn("[ServerMain] buildWorld error (players will still init): " .. tostring(errWorld))
+end
 
 if not RunService:IsRunning() then
     return
