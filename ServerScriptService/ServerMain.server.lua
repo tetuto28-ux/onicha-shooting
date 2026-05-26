@@ -423,16 +423,32 @@ local function createAnomaly(room, config, info)
         end
     end
 
-    -- A soft outline marks it as something to inspect, without flattening the shape.
+    -- A soft outline used ONLY by the Hint system. Off by default so the
+    -- player has to actually search for the oddities.
     local highlight = Instance.new("Highlight")
     highlight.Name = "Marker"
+    highlight.Enabled = false
     highlight.FillColor = info.color
-    highlight.FillTransparency = 0.78
+    highlight.FillTransparency = 0.6
     highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.OutlineTransparency = 0.1
-    highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     highlight.Adornee = model
     highlight.Parent = model
+
+    -- Sparkle burst played when the oddity is discovered.
+    local sparkles = Instance.new("ParticleEmitter")
+    sparkles.Name = "FoundSparkles"
+    sparkles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+    sparkles.Rate = 0
+    sparkles.Enabled = false
+    sparkles.Lifetime = NumberRange.new(0.45, 0.9)
+    sparkles.Speed = NumberRange.new(7, 14)
+    sparkles.SpreadAngle = Vector2.new(180, 180)
+    sparkles.Color = ColorSequence.new(info.color)
+    sparkles.LightEmission = 0.7
+    sparkles.Size = NumberSequence.new(1.4, 0)
+    sparkles.Parent = primary
 
     foundBadge(primary, "Found! +" .. tostring(info.reward))
     return primary
@@ -441,7 +457,20 @@ end
 local function buildWorld()
     Lighting.ClockTime = 15
     Lighting.Brightness = 2
-    Lighting.Ambient = Color3.fromRGB(130, 140, 160)
+    Lighting.Ambient = Color3.fromRGB(120, 128, 150)
+    Lighting.OutdoorAmbient = Color3.fromRGB(90, 100, 125)
+    Lighting.EnvironmentDiffuseScale = 0.4
+    Lighting.FogEnd = 320
+    Lighting.FogColor = Color3.fromRGB(150, 160, 185)
+
+    local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
+    atmosphere.Density = 0.32
+    atmosphere.Offset = 0.1
+    atmosphere.Haze = 1.4
+    atmosphere.Glare = 0.1
+    atmosphere.Color = Color3.fromRGB(199, 205, 220)
+    atmosphere.Decay = Color3.fromRGB(106, 112, 135)
+    atmosphere.Parent = Lighting
 
     local oldDemo = Workspace:FindFirstChild("OnichaShootingDemo")
     if oldDemo then
@@ -492,6 +521,10 @@ local function markModelFound(model)
         highlight.Enabled = false
     end
     if model.PrimaryPart then
+        local sparkles = model.PrimaryPart:FindFirstChild("FoundSparkles")
+        if sparkles and sparkles:IsA("ParticleEmitter") then
+            sparkles:Emit(26)
+        end
         local badge = model.PrimaryPart:FindFirstChild("FoundLabel")
         if badge then
             badge.Enabled = true
@@ -509,7 +542,7 @@ local function resetAllAnomalies()
             inst.Transparency = inst:GetAttribute("BaseTransparency") or 0
             inst:SetAttribute("Found", false)
         elseif inst:IsA("Highlight") and inst.Name == "Marker" then
-            inst.Enabled = true
+            inst.Enabled = false
         elseif inst:IsA("BillboardGui") and inst.Name == "FoundLabel" then
             inst.Enabled = false
         end

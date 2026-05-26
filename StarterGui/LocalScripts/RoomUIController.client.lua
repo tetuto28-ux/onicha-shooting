@@ -87,6 +87,10 @@ local function dimModel(model)
         marker.Enabled = false
     end
     if model.PrimaryPart then
+        local sparkles = model.PrimaryPart:FindFirstChild("FoundSparkles")
+        if sparkles and sparkles:IsA("ParticleEmitter") then
+            sparkles:Emit(26)
+        end
         local badge = model.PrimaryPart:FindFirstChild("FoundLabel")
         if badge then
             badge.Enabled = true
