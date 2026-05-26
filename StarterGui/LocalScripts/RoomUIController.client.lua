@@ -5,17 +5,18 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local AnomalyFoundEvent = remotes:WaitForChild("AnomalyFoundEvent")
+local UIMessageEvent = remotes:WaitForChild("UIMessageEvent")
 
+local ROOM_SPACING = 90
 local roomOrigins = {
     [1] = Vector3.new(0, 0, -18),
-    [2] = Vector3.new(90, 0, -18),
-    [3] = Vector3.new(180, 0, -18),
+    [2] = Vector3.new(ROOM_SPACING, 0, -18),
+    [3] = Vector3.new(ROOM_SPACING * 2, 0, -18),
 }
 
 local foundByRoom = {}
 local hooked = {}
 local currentRoom = 1
-local coins = 0
 local totalFound = 0
 local finalRoom = 3
 
@@ -47,16 +48,18 @@ local function showMessage(text, seconds)
     end)
 end
 
-local function updateUi()
-    local roomFound = foundByRoom[currentRoom] or {}
+local function countFound(roomId)
+    local roomFound = foundByRoom[roomId] or {}
     local count = 0
     for _ in pairs(roomFound) do
         count += 1
     end
+    return count
+end
 
-    setText("CoinDisplay", "Coins: " .. tostring(coins))
+local function updateUi()
     setText("RoomDisplay", string.format("Room: %03d", currentRoom))
-    setText("FoundCounter", "Found: " .. tostring(count) .. "/3")
+    setText("FoundCounter", "Found: " .. tostring(countFound(currentRoom)) .. "/3")
 end
 
 local function teleportToRoom(roomId)
@@ -68,19 +71,36 @@ local function teleportToRoom(roomId)
     end
 end
 
-local function clearRoomIfReady(roomId)
-    local roomFound = foundByRoom[roomId] or {}
-    local count = 0
-    for _ in pairs(roomFound) do
-        count += 1
+-- Dim a whole anomaly model and reveal its "Found!" badge (instant local feedback).
+local function dimModel(model)
+    if not model then
+        return
     end
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("BasePart") and p:GetAttribute("IsAnomaly") then
+            local base = p:GetAttribute("BaseTransparency") or 0
+            p.Transparency = math.clamp(base + 0.45, 0, 0.85)
+        end
+    end
+    local marker = model:FindFirstChild("Marker")
+    if marker and marker:IsA("Highlight") then
+        marker.Enabled = false
+    end
+    if model.PrimaryPart then
+        local badge = model.PrimaryPart:FindFirstChild("FoundLabel")
+        if badge then
+            badge.Enabled = true
+        end
+    end
+end
 
-    if count < 3 then
+local function clearRoomIfReady(roomId)
+    if countFound(roomId) < 3 then
         return
     end
 
     if roomId >= finalRoom then
-        showMessage("Demo clear! Total found: " .. tostring(totalFound), 5)
+        showMessage("All rooms clear! Press Play Again.", 5)
         return
     end
 
@@ -111,10 +131,8 @@ local function markFound(instance)
     totalFound += 1
 
     local reward = instance:GetAttribute("Reward") or 10
-    coins += reward
-    instance.Transparency = 0.55
-    instance.Material = Enum.Material.Neon
     instance:SetAttribute("Found", true)
+    dimModel(instance:FindFirstAncestorOfClass("Model"))
 
     updateUi()
     showMessage("Found! +" .. tostring(reward), 1.5)
@@ -155,6 +173,18 @@ for _, descendant in ipairs(Workspace:GetDescendants()) do
 end
 
 Workspace.DescendantAdded:Connect(hookAnomaly)
+
+UIMessageEvent.OnClientEvent:Connect(function(payload)
+    if payload.kind == "Replay" then
+        foundByRoom = {}
+        currentRoom = 1
+        totalFound = 0
+        task.wait(0.2)
+        teleportToRoom(currentRoom)
+        updateUi()
+    end
+end)
+
 player.CharacterAdded:Connect(function()
     task.wait(0.4)
     teleportToRoom(currentRoom)

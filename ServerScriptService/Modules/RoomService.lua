@@ -78,6 +78,17 @@ function RoomService:AdvanceRoom(player)
     return state.currentRoom
 end
 
+function RoomService:ResetPlayer(player)
+    local state = self.State[player]
+    if not state then
+        self:InitPlayer(player, 1)
+        return
+    end
+    state.currentRoom = 1
+    state.foundByRoom = {}
+    state.extraAnomalies = {}
+end
+
 function RoomService:AddGeneratedAnomaly(player, roomId, anomalyName)
     local state = self.State[player]
     state.extraAnomalies[roomId] = state.extraAnomalies[roomId] or {}

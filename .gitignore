@@ -1,0 +1,9 @@
+# Rojo build outputs (never commit generated place/model files)
+*.rbxlx
+*.rbxl
+*.rbxm
+*.rbxmx
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
