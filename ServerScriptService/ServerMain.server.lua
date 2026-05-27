@@ -1,3 +1,10 @@
+-- Oddity Hunt - "declare" mode.
+-- The server only builds the world: enclosed rooms full of normal props plus a
+-- randomised set of oddities. Every inspectable object is a Model tagged with
+-- "Inspectable", and oddities additionally carry "IsAnomaly". All of the game
+-- logic (flagging, confirming, lives, timer, scoring) lives on the client, so
+-- the server stays small and hard to break.
+
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -8,12 +15,12 @@ local ROOM_SPACING = 90
 local ROOM_WIDTH = 44
 local ROOM_DEPTH = 54
 local WALL_HEIGHT = 18
+local ROOM_COUNT = 3
 
-local serverClickHooked = setmetatable({}, { __mode = "k" })
-local serverTouchCooldown = {}
+-- Each listed oddity appears with this probability, so the number of oddities
+-- in a room (and whether there are any at all) changes every play.
+local ANOMALY_PRESENCE_CHANCE = 0.6
 
--- Parts whose CFrame is updated every frame for a touch of life.
--- Each entry is a function(now) that moves something.
 local animatedUpdaters = {}
 
 local roomConfigs = {
@@ -24,9 +31,9 @@ local roomConfigs = {
         wallColor = Color3.fromRGB(78, 101, 138),
         floorColor = Color3.fromRGB(78, 88, 108),
         anomalies = {
-            { name = "ReverseClock", label = "Reverse Clock", pos = Vector3.new(-12, 6, -31), color = Color3.fromRGB(255, 224, 92), reward = 10 },
-            { name = "CeilingChair", label = "Ceiling Chair", pos = Vector3.new(0, 12, -22), color = Color3.fromRGB(77, 170, 255), reward = 10 },
-            { name = "MiniYatai", label = "Tiny Food Stall", pos = Vector3.new(13, 3, -16), color = Color3.fromRGB(255, 127, 139), reward = 10 },
+            { name = "ReverseClock", label = "Reverse Clock", pos = Vector3.new(-12, 6, -31), color = Color3.fromRGB(255, 224, 92) },
+            { name = "CeilingChair", label = "Ceiling Chair", pos = Vector3.new(0, 13, -22), color = Color3.fromRGB(77, 170, 255) },
+            { name = "MiniYatai", label = "Tiny Food Stall", pos = Vector3.new(15, 3, -26), color = Color3.fromRGB(255, 127, 139) },
         },
     },
     {
@@ -36,9 +43,9 @@ local roomConfigs = {
         wallColor = Color3.fromRGB(92, 118, 101),
         floorColor = Color3.fromRGB(92, 89, 75),
         anomalies = {
-            { name = "MiniSea", label = "Tiny Sea Fridge", pos = Vector3.new(ROOM_SPACING - 13, 4, -19), color = Color3.fromRGB(77, 206, 255), reward = 10 },
-            { name = "StarSink", label = "Star Sink", pos = Vector3.new(ROOM_SPACING, 3, -30), color = Color3.fromRGB(255, 241, 90), reward = 10 },
-            { name = "MiniHotel", label = "Mini Hotel", pos = Vector3.new(ROOM_SPACING + 13, 4, -16), color = Color3.fromRGB(185, 120, 255), reward = 60 },
+            { name = "MiniSea", label = "Tiny Sea Fridge", pos = Vector3.new(ROOM_SPACING - 15, 4, -25), color = Color3.fromRGB(77, 206, 255) },
+            { name = "StarSink", label = "Star Sink", pos = Vector3.new(ROOM_SPACING + 2, 3, -30), color = Color3.fromRGB(255, 241, 90) },
+            { name = "MiniHotel", label = "Mini Hotel", pos = Vector3.new(ROOM_SPACING + 15, 4, -24), color = Color3.fromRGB(185, 120, 255) },
         },
     },
     {
@@ -48,9 +55,9 @@ local roomConfigs = {
         wallColor = Color3.fromRGB(106, 91, 126),
         floorColor = Color3.fromRGB(83, 81, 105),
         anomalies = {
-            { name = "MirrorArt", label = "Wrong Mirror Art", pos = Vector3.new(ROOM_SPACING * 2 - 13, 6, -31), color = Color3.fromRGB(167, 230, 255), reward = 10 },
-            { name = "MovingCurtainShadow", label = "Moving Shadow", pos = Vector3.new(ROOM_SPACING * 2, 5, -29), color = Color3.fromRGB(33, 36, 46), reward = 10 },
-            { name = "MiniElevator", label = "Mini Elevator", pos = Vector3.new(ROOM_SPACING * 2 + 13, 5, -31), color = Color3.fromRGB(145, 168, 188), reward = 10 },
+            { name = "MirrorArt", label = "Wrong Mirror Art", pos = Vector3.new(ROOM_SPACING * 2 - 14, 6, -31), color = Color3.fromRGB(167, 230, 255) },
+            { name = "MovingCurtainShadow", label = "Moving Shadow", pos = Vector3.new(ROOM_SPACING * 2 + 2, 5, -29), color = Color3.fromRGB(33, 36, 46) },
+            { name = "MiniElevator", label = "Mini Elevator", pos = Vector3.new(ROOM_SPACING * 2 + 15, 5, -31), color = Color3.fromRGB(145, 168, 188) },
         },
     },
 }
@@ -66,22 +73,10 @@ local function ensureRemote(name)
     return remote
 end
 
-local AnomalyFoundEvent = ensureRemote("AnomalyFoundEvent")
-local RoomClearedEvent = ensureRemote("RoomClearedEvent")
-local GenerateAnomalyEvent = ensureRemote("GenerateAnomalyEvent")
-local PurchaseUpgradeEvent = ensureRemote("PurchaseUpgradeEvent")
 local UIMessageEvent = ensureRemote("UIMessageEvent")
 local ReplayEvent = ensureRemote("ReplayEvent")
 
-local modules = script.Parent:WaitForChild("Modules")
-local CoinService = require(modules.CoinService)
-local RoomService = require(modules.RoomService)
-local AnomalyService = require(modules.AnomalyService)
-local UpgradeService = require(modules.UpgradeService)
-local SaveService = require(modules.SaveService)
-local AntiExploitService = require(modules.AntiExploitService)
-
--- Generic builder used for every decorative / anomaly sub-part.
+-- Generic builder used for every part.
 local function build(parent, def)
     local p = Instance.new("Part")
     p.Name = def.name or "Part"
@@ -109,8 +104,8 @@ local function build(parent, def)
     return p
 end
 
--- Decorative collidable part for room furniture.
-local function part(parent, name, position, size, color, material)
+-- Collidable scenery part (walls, floor) parented straight to the room.
+local function scenery(parent, name, position, size, color, material)
     return build(parent, {
         name = name,
         pos = position,
@@ -142,82 +137,23 @@ local function labelBillboard(parent, text, height)
     return gui
 end
 
--- A hidden "Found!" badge that pops up once the anomaly is discovered.
-local function foundBadge(parent, text)
-    local gui = Instance.new("BillboardGui")
-    gui.Name = "FoundLabel"
-    gui.AlwaysOnTop = true
-    gui.Enabled = false
-    gui.Size = UDim2.new(0, 180, 0, 46)
-    gui.StudsOffset = Vector3.new(0, 3.2, 0)
-    gui.Parent = parent
-
-    local label = Instance.new("TextLabel")
-    label.BackgroundColor3 = Color3.fromRGB(34, 153, 84)
-    label.BackgroundTransparency = 0.1
-    label.BorderSizePixel = 0
-    label.Font = Enum.Font.GothamBold
-    label.Size = UDim2.fromScale(1, 1)
-    label.Text = text
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextScaled = true
-    label.Parent = gui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = label
-    return gui
-end
-
-local function decorateRoom(model, config)
-    local origin = config.origin
-
-    part(model, "Floor", origin, Vector3.new(ROOM_WIDTH, 1, ROOM_DEPTH), config.floorColor, Enum.Material.Plastic)
-    part(model, "BackWall", origin + Vector3.new(0, WALL_HEIGHT / 2, -ROOM_DEPTH / 2), Vector3.new(ROOM_WIDTH, WALL_HEIGHT, 1), config.wallColor)
-    part(model, "LeftWall", origin + Vector3.new(-ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0), Vector3.new(1, WALL_HEIGHT, ROOM_DEPTH), config.wallColor)
-    part(model, "RightWall", origin + Vector3.new(ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0), Vector3.new(1, WALL_HEIGHT, ROOM_DEPTH), config.wallColor:Lerp(Color3.new(1, 1, 1), 0.25))
-    part(model, "EntryPad", origin + Vector3.new(0, 0.65, 18), Vector3.new(12, 0.3, 8), Color3.fromRGB(225, 231, 245), Enum.Material.Neon)
-
-    -- A rug so the floor reads as a furnished room rather than a flat slab.
-    part(model, "Rug", origin + Vector3.new(0, 0.55, 2), Vector3.new(20, 0.1, 16), config.wallColor:Lerp(Color3.new(0, 0, 0), 0.2), Enum.Material.Fabric)
-
-    local sign = part(model, "RoomSign", origin + Vector3.new(0, 8, -ROOM_DEPTH / 2 + 0.7), Vector3.new(18, 5, 0.5), Color3.fromRGB(24, 29, 40))
-    labelBillboard(sign, config.title, 4)
-
-    -- Normal furniture for context.
-    part(model, "Desk", origin + Vector3.new(-13, 2, 6), Vector3.new(10, 3, 4), Color3.fromRGB(116, 78, 49), Enum.Material.Wood)
-    part(model, "Table", origin + Vector3.new(10, 1.5, 3), Vector3.new(8, 2, 5), Color3.fromRGB(71, 54, 48), Enum.Material.Wood)
-    part(model, "Lamp", origin + Vector3.new(14, 4, 3), Vector3.new(1.4, 4, 1.4), Color3.fromRGB(255, 235, 126), Enum.Material.Neon)
-
-    -- A potted plant.
-    part(model, "PlantPot", origin + Vector3.new(-16, 1.5, -6), Vector3.new(2, 3, 2), Color3.fromRGB(120, 72, 48), Enum.Material.Slate)
-    part(model, "PlantLeaves", origin + Vector3.new(-16, 4, -6), Vector3.new(4, 4, 4), Color3.fromRGB(72, 140, 70), Enum.Material.Grass)
-
-    -- A simple framed picture on the back wall (a "normal" object near the odd one).
-    part(model, "PictureFrame", origin + Vector3.new(8, 9, -ROOM_DEPTH / 2 + 0.9), Vector3.new(6, 4.5, 0.4), Color3.fromRGB(40, 30, 22), Enum.Material.Wood)
-    part(model, "PictureArt", origin + Vector3.new(8, 9, -ROOM_DEPTH / 2 + 1.1), Vector3.new(5, 3.6, 0.2), Color3.fromRGB(150, 180, 210), Enum.Material.SmoothPlastic)
-end
-
 -- ---------------------------------------------------------------------------
--- Anomaly model builders. Each returns the model's primary (anchor) part.
--- All sub-parts are tagged afterwards, so any part of the model is clickable.
+-- Oddity model builders. Each returns the model's primary (anchor) part.
 -- ---------------------------------------------------------------------------
 
 local function buildReverseClock(model, info)
     local c = info.pos
     local cream = Color3.fromRGB(244, 240, 226)
 
-    local rim = build(model, { name = "Rim", pos = c - Vector3.new(0, 0, 0.2), size = Vector3.new(0.4, 4.6, 4.6), color = Color3.fromRGB(60, 60, 70), material = Enum.Material.Metal, shape = Enum.PartType.Cylinder, orient = Vector3.new(0, 90, 0) })
+    build(model, { name = "Rim", pos = c - Vector3.new(0, 0, 0.2), size = Vector3.new(0.4, 4.6, 4.6), color = Color3.fromRGB(60, 60, 70), material = Enum.Material.Metal, shape = Enum.PartType.Cylinder, orient = Vector3.new(0, 90, 0) })
     local face = build(model, { name = "Face", pos = c, size = Vector3.new(0.4, 4, 4), color = cream, material = Enum.Material.SmoothPlastic, shape = Enum.PartType.Cylinder, orient = Vector3.new(0, 90, 0) })
 
-    -- Hour ticks at 12 / 3 / 6 / 9.
     for _, off in ipairs({ Vector3.new(0, 1.6, 0), Vector3.new(1.6, 0, 0), Vector3.new(0, -1.6, 0), Vector3.new(-1.6, 0, 0) }) do
         build(model, { name = "Tick", pos = c + off + Vector3.new(0, 0, 0.3), size = Vector3.new(0.3, 0.3, 0.18), color = Color3.fromRGB(40, 40, 50) })
     end
 
     build(model, { name = "Hub", pos = c + Vector3.new(0, 0, 0.32), size = Vector3.new(0.5, 0.5, 0.3), color = Color3.fromRGB(40, 40, 50), shape = Enum.PartType.Cylinder, orient = Vector3.new(0, 90, 0) })
 
-    -- The two hands pivot about the clock centre and sweep BACKWARDS.
     local centre = CFrame.new(c.X, c.Y, c.Z + 0.4)
     local minuteHand = build(model, { name = "MinuteHand", pos = centre * CFrame.new(0, 0.8, 0), size = Vector3.new(0.18, 1.7, 0.12), color = Color3.fromRGB(30, 30, 40) })
     local secondHand = build(model, { name = "SecondHand", pos = centre * CFrame.new(0, 1.0, 0), size = Vector3.new(0.1, 2.1, 0.1), color = Color3.fromRGB(200, 60, 60) })
@@ -234,14 +170,12 @@ local function buildCeilingChair(model, info)
     local c = info.pos
     local wood = Color3.fromRGB(150, 96, 56)
 
-    -- Built upside-down: the seat is up high, legs point toward the ceiling.
     local seat = build(model, { name = "Seat", pos = c, size = Vector3.new(3, 0.5, 3), color = wood, material = Enum.Material.Wood })
     for _, dx in ipairs({ -1.2, 1.2 }) do
         for _, dz in ipairs({ -1.2, 1.2 }) do
             build(model, { name = "Leg", pos = c + Vector3.new(dx, 1.5, dz), size = Vector3.new(0.4, 3, 0.4), color = wood, material = Enum.Material.Wood })
         end
     end
-    -- Backrest hangs downward because the chair is flipped.
     build(model, { name = "Back", pos = c + Vector3.new(0, -1.8, -1.3), size = Vector3.new(3, 3, 0.4), color = wood, material = Enum.Material.Wood })
 
     local basePivot = CFrame.new(c)
@@ -259,10 +193,8 @@ local function buildMiniYatai(model, info)
     build(model, { name = "CounterTop", pos = c + Vector3.new(0, 1.4, 0), size = Vector3.new(5.4, 0.4, 2.8), color = Color3.fromRGB(196, 150, 100), material = Enum.Material.WoodPlanks })
     build(model, { name = "PostL", pos = c + Vector3.new(-2.2, 3.2, 0), size = Vector3.new(0.3, 4, 0.3), color = Color3.fromRGB(90, 60, 40), material = Enum.Material.Wood })
     build(model, { name = "PostR", pos = c + Vector3.new(2.2, 3.2, 0), size = Vector3.new(0.3, 4, 0.3), color = Color3.fromRGB(90, 60, 40), material = Enum.Material.Wood })
-    -- Striped roof.
     build(model, { name = "Roof", pos = c + Vector3.new(0, 5.3, 0), size = Vector3.new(6, 0.5, 3.4), color = Color3.fromRGB(210, 70, 78), material = Enum.Material.Fabric })
     build(model, { name = "RoofStripe", pos = c + Vector3.new(0, 5.55, 0), size = Vector3.new(6.1, 0.2, 1.1), color = Color3.fromRGB(245, 245, 245), material = Enum.Material.Fabric })
-    -- Red paper lantern.
     build(model, { name = "Lantern", pos = c + Vector3.new(1.6, 4.4, 1.2), size = Vector3.new(1, 1.2, 1), color = Color3.fromRGB(220, 60, 50), material = Enum.Material.Neon, shape = Enum.PartType.Ball })
 
     return counter
@@ -273,10 +205,8 @@ local function buildMiniSea(model, info)
     local white = Color3.fromRGB(236, 238, 240)
 
     local body = build(model, { name = "FridgeBody", pos = c, size = Vector3.new(3.4, 5.4, 3), color = white, material = Enum.Material.SmoothPlastic })
-    -- Door swung open to the side.
     build(model, { name = "Door", pos = CFrame.new(c + Vector3.new(-2.4, 0, 1.4)) * CFrame.Angles(0, math.rad(60), 0), size = Vector3.new(0.3, 5.2, 2.8), color = white, material = Enum.Material.SmoothPlastic })
     build(model, { name = "Handle", pos = CFrame.new(c + Vector3.new(-2.4, 0, 2.4)) * CFrame.Angles(0, math.rad(60), 0), size = Vector3.new(0.2, 2, 0.2), color = Color3.fromRGB(150, 150, 160), material = Enum.Material.Metal })
-    -- The little sea inside.
     build(model, { name = "Water", pos = c + Vector3.new(0, -0.4, 0.2), size = Vector3.new(2.6, 3.2, 2.2), color = Color3.fromRGB(40, 130, 210), material = Enum.Material.Glass, transparency = 0.25 })
     build(model, { name = "Foam", pos = c + Vector3.new(0, 1.1, 0.2), size = Vector3.new(2.6, 0.4, 2.2), color = Color3.fromRGB(220, 240, 255), material = Enum.Material.Foil, transparency = 0.15 })
 
@@ -288,15 +218,12 @@ local function buildStarSink(model, info)
     local steel = Color3.fromRGB(190, 196, 204)
 
     local counter = build(model, { name = "Counter", pos = c, size = Vector3.new(5, 1.2, 3), color = Color3.fromRGB(210, 205, 195), material = Enum.Material.Marble })
-    -- Basin.
     build(model, { name = "Basin", pos = c + Vector3.new(0, 0.5, 0), size = Vector3.new(0.6, 2.6, 2.6), color = steel, material = Enum.Material.Metal, shape = Enum.PartType.Cylinder, orient = Vector3.new(0, 0, 90) })
-    -- Five points suggesting a star around the rim.
     for i = 0, 4 do
         local a = math.rad(i * 72)
         local off = Vector3.new(math.sin(a) * 1.5, 0.75, math.cos(a) * 1.5)
         build(model, { name = "StarPoint", pos = CFrame.new(c + off) * CFrame.Angles(0, a, 0), size = Vector3.new(0.4, 0.2, 1.6), color = info.color, material = Enum.Material.Neon })
     end
-    -- Faucet.
     build(model, { name = "FaucetBase", pos = c + Vector3.new(0, 1.4, -1), size = Vector3.new(0.4, 2, 0.4), color = steel, material = Enum.Material.Metal })
     build(model, { name = "FaucetSpout", pos = c + Vector3.new(0, 2.4, -0.4), size = Vector3.new(0.4, 0.4, 1.6), color = steel, material = Enum.Material.Metal })
 
@@ -307,19 +234,16 @@ local function buildMiniHotel(model, info)
     local c = info.pos
     local wall = Color3.fromRGB(214, 200, 170)
 
-    -- Tabletop the little hotel sits on.
     build(model, { name = "TableTop", pos = c + Vector3.new(0, -2.6, 0), size = Vector3.new(6, 0.4, 4), color = Color3.fromRGB(90, 64, 44), material = Enum.Material.Wood })
 
     local tower = build(model, { name = "Tower", pos = c, size = Vector3.new(4, 6, 3), color = wall, material = Enum.Material.Concrete })
     build(model, { name = "Roof", pos = c + Vector3.new(0, 3.2, 0), size = Vector3.new(4.4, 0.6, 3.4), color = Color3.fromRGB(120, 70, 60), material = Enum.Material.Slate })
 
-    -- Window grid.
     for floor = -1, 1 do
         for col = -1, 1 do
             build(model, { name = "Window", pos = c + Vector3.new(col * 1.1, floor * 1.6, 1.55), size = Vector3.new(0.7, 1, 0.1), color = Color3.fromRGB(255, 226, 130), material = Enum.Material.Neon })
         end
     end
-    -- Door + glowing sign (it is the rare one, so make it pop).
     build(model, { name = "Door", pos = c + Vector3.new(0, -2.5, 1.55), size = Vector3.new(1, 1.4, 0.1), color = Color3.fromRGB(80, 50, 40), material = Enum.Material.Wood })
     local sign = build(model, { name = "HotelSign", pos = c + Vector3.new(0, 3.9, 1), size = Vector3.new(3, 0.9, 0.3), color = info.color, material = Enum.Material.Neon })
     labelBillboard(sign, "HOTEL", 1.4)
@@ -330,13 +254,11 @@ end
 local function buildMirrorArt(model, info)
     local c = info.pos
 
-    -- A real painting on the left, a mirror on the right.
     build(model, { name = "ArtFrame", pos = c + Vector3.new(-2.4, 0, 0), size = Vector3.new(0.4, 5, 3.2), color = Color3.fromRGB(60, 44, 30), material = Enum.Material.Wood })
     build(model, { name = "ArtCanvas", pos = c + Vector3.new(-2.2, 0, 0), size = Vector3.new(0.2, 4.2, 2.6), color = Color3.fromRGB(90, 150, 120), material = Enum.Material.SmoothPlastic })
 
     build(model, { name = "MirrorFrame", pos = c + Vector3.new(2.4, 0, 0), size = Vector3.new(0.4, 5, 3.2), color = Color3.fromRGB(60, 44, 30), material = Enum.Material.Wood })
     local glass = build(model, { name = "MirrorGlass", pos = c + Vector3.new(2.2, 0, 0), size = Vector3.new(0.2, 4.4, 2.8), color = Color3.fromRGB(205, 225, 235), material = Enum.Material.Glass, transparency = 0.2, reflectance = 0.5 })
-    -- The reflected art is the WRONG colour: that is the oddity.
     build(model, { name = "WrongReflection", pos = c + Vector3.new(2.05, 0, 0), size = Vector3.new(0.15, 3.4, 2), color = Color3.fromRGB(210, 90, 150), material = Enum.Material.SmoothPlastic })
 
     return glass
@@ -345,11 +267,9 @@ end
 local function buildMovingCurtainShadow(model, info)
     local c = info.pos
 
-    -- Curtain behind the shadow.
     build(model, { name = "Curtain", pos = c + Vector3.new(0, 0, -0.6), size = Vector3.new(6, 8, 0.4), color = Color3.fromRGB(120, 70, 90), material = Enum.Material.Fabric })
     build(model, { name = "Rail", pos = c + Vector3.new(0, 4.2, -0.6), size = Vector3.new(6.4, 0.4, 0.6), color = Color3.fromRGB(80, 80, 90), material = Enum.Material.Metal })
 
-    -- A dark human-like silhouette.
     local bodyShadow = build(model, { name = "ShadowBody", pos = c, size = Vector3.new(1.8, 4.6, 0.6), color = Color3.fromRGB(18, 18, 24), material = Enum.Material.SmoothPlastic, transparency = 0.15 })
     build(model, { name = "ShadowHead", pos = c + Vector3.new(0, 3, 0), size = Vector3.new(1.4, 1.4, 0.6), color = Color3.fromRGB(18, 18, 24), material = Enum.Material.SmoothPlastic, transparency = 0.15, shape = Enum.PartType.Ball })
 
@@ -370,10 +290,8 @@ local function buildMiniElevator(model, info)
     build(model, { name = "ShaftR", pos = c + Vector3.new(1.7, 0, 0.3), size = Vector3.new(0.4, 7, 0.6), color = Color3.fromRGB(110, 116, 128), material = Enum.Material.Metal })
     build(model, { name = "ShaftTop", pos = c + Vector3.new(0, 3.5, 0.3), size = Vector3.new(4, 0.5, 0.6), color = Color3.fromRGB(110, 116, 128), material = Enum.Material.Metal })
 
-    -- Call button / floor indicator.
     build(model, { name = "CallButton", pos = c + Vector3.new(2.3, 0.5, 0.3), size = Vector3.new(0.4, 0.6, 0.4), color = Color3.fromRGB(120, 255, 140), material = Enum.Material.Neon })
 
-    -- The cab rides up and down inside the shaft.
     local cab = build(model, { name = "Cab", pos = c + Vector3.new(0, -1.5, 0.45), size = Vector3.new(2.8, 3, 0.5), color = Color3.fromRGB(220, 224, 232), material = Enum.Material.SmoothPlastic })
     local cabBase = cab.CFrame
     table.insert(animatedUpdaters, function(now)
@@ -395,10 +313,56 @@ local anomalyBuilders = {
     MiniElevator = buildMiniElevator,
 }
 
-local function createAnomaly(room, config, info)
+-- ---------------------------------------------------------------------------
+-- Normal decoy props. They look ordinary; flagging one is a mistake.
+-- ---------------------------------------------------------------------------
+
+local function newInspectable(parent, name, isAnomaly)
     local model = Instance.new("Model")
-    model.Name = info.name
-    model.Parent = room
+    model.Name = name
+    model:SetAttribute("Inspectable", true)
+    model:SetAttribute("IsAnomaly", isAnomaly == true)
+    model.Parent = parent
+    return model
+end
+
+local function buildDecoy(room, name, pos)
+    local model = newInspectable(room, name, false)
+    local primary
+
+    if name == "Desk" then
+        primary = build(model, { name = "Top", pos = pos + Vector3.new(0, 2.4, 0), size = Vector3.new(8, 0.6, 4), color = Color3.fromRGB(120, 82, 52), material = Enum.Material.Wood })
+        build(model, { name = "Body", pos = pos + Vector3.new(0, 1, 0), size = Vector3.new(7.4, 2, 3.4), color = Color3.fromRGB(104, 70, 44), material = Enum.Material.Wood })
+    elseif name == "Sofa" then
+        primary = build(model, { name = "Base", pos = pos + Vector3.new(0, 1, 0), size = Vector3.new(8, 1.6, 3.5), color = Color3.fromRGB(96, 110, 150), material = Enum.Material.Fabric })
+        build(model, { name = "Back", pos = pos + Vector3.new(0, 2.4, -1.4), size = Vector3.new(8, 2, 0.8), color = Color3.fromRGB(96, 110, 150), material = Enum.Material.Fabric })
+    elseif name == "Lamp" then
+        primary = build(model, { name = "Pole", pos = pos + Vector3.new(0, 2.5, 0), size = Vector3.new(0.6, 5, 0.6), color = Color3.fromRGB(60, 60, 70), material = Enum.Material.Metal })
+        build(model, { name = "Shade", pos = pos + Vector3.new(0, 5.2, 0), size = Vector3.new(2.6, 1.6, 2.6), color = Color3.fromRGB(255, 236, 170), material = Enum.Material.Neon })
+    elseif name == "Plant" then
+        primary = build(model, { name = "Pot", pos = pos + Vector3.new(0, 1, 0), size = Vector3.new(2, 2, 2), color = Color3.fromRGB(150, 92, 60), material = Enum.Material.Slate })
+        build(model, { name = "Leaves", pos = pos + Vector3.new(0, 3.2, 0), size = Vector3.new(4, 4, 4), color = Color3.fromRGB(72, 140, 70), material = Enum.Material.Grass, shape = Enum.PartType.Ball })
+    elseif name == "Painting" then
+        primary = build(model, { name = "Frame", pos = pos, size = Vector3.new(5, 4, 0.5), color = Color3.fromRGB(60, 44, 30), material = Enum.Material.Wood })
+        build(model, { name = "Canvas", pos = pos + Vector3.new(0, 0, 0.2), size = Vector3.new(4.2, 3.2, 0.2), color = Color3.fromRGB(150, 180, 210), material = Enum.Material.SmoothPlastic })
+    elseif name == "Crate" then
+        primary = build(model, { name = "Box", pos = pos + Vector3.new(0, 1.5, 0), size = Vector3.new(3, 3, 3), color = Color3.fromRGB(168, 130, 84), material = Enum.Material.WoodPlanks })
+    else -- "TV"
+        primary = build(model, { name = "Screen", pos = pos + Vector3.new(0, 3, 0), size = Vector3.new(5, 3, 0.5), color = Color3.fromRGB(28, 30, 38), material = Enum.Material.Glass })
+        build(model, { name = "Stand", pos = pos + Vector3.new(0, 1, 0), size = Vector3.new(1, 2, 1), color = Color3.fromRGB(40, 42, 50), material = Enum.Material.Metal })
+    end
+
+    model.PrimaryPart = primary
+    for _, p in ipairs(model:GetDescendants()) do
+        if p:IsA("BasePart") then
+            p.CanCollide = false
+        end
+    end
+    return model
+end
+
+local function createAnomaly(room, config, info)
+    local model = newInspectable(room, info.name, true)
 
     local builder = anomalyBuilders[info.name]
     local primary
@@ -409,85 +373,79 @@ local function createAnomaly(room, config, info)
     end
     model.PrimaryPart = primary
 
-    -- Tag every part so a click/touch anywhere on the model counts.
     for _, p in ipairs(model:GetDescendants()) do
         if p:IsA("BasePart") then
             p.CanCollide = false
-            p:SetAttribute("IsAnomaly", true)
-            p:SetAttribute("RoomId", config.id)
-            p:SetAttribute("AnomalyName", info.name)
-            p:SetAttribute("DisplayName", info.label)
-            p:SetAttribute("Reward", info.reward)
-            p:SetAttribute("Found", false)
-            p:SetAttribute("BaseTransparency", p.Transparency)
         end
     end
 
-    -- A soft outline used ONLY by the Hint system. Off by default so the
-    -- player has to actually search for the oddities.
-    local highlight = Instance.new("Highlight")
-    highlight.Name = "Marker"
-    highlight.Enabled = false
-    highlight.FillColor = info.color
-    highlight.FillTransparency = 0.6
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.OutlineTransparency = 0
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Adornee = model
-    highlight.Parent = model
+    -- Hidden outline used only by the client Hint feature.
+    local hint = Instance.new("Highlight")
+    hint.Name = "HintMarker"
+    hint.Enabled = false
+    hint.FillColor = info.color
+    hint.FillTransparency = 0.45
+    hint.OutlineColor = Color3.fromRGB(255, 255, 255)
+    hint.OutlineTransparency = 0
+    hint.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hint.Adornee = model
+    hint.Parent = model
 
-    -- Sparkle burst played when the oddity is discovered.
-    local sparkles = Instance.new("ParticleEmitter")
-    sparkles.Name = "FoundSparkles"
-    sparkles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
-    sparkles.Rate = 0
-    sparkles.Enabled = false
-    sparkles.Lifetime = NumberRange.new(0.45, 0.9)
-    sparkles.Speed = NumberRange.new(7, 14)
-    sparkles.SpreadAngle = Vector2.new(180, 180)
-    sparkles.Color = ColorSequence.new(info.color)
-    sparkles.LightEmission = 0.7
-    sparkles.Size = NumberSequence.new(1.4, 0)
-    sparkles.Parent = primary
-
-    foundBadge(primary, "Found! +" .. tostring(info.reward))
-    return primary
+    return model
 end
 
--- Lighting / atmosphere is cosmetic: never let it block the rooms from building.
-local function applyLighting()
-    Lighting.ClockTime = 15
-    Lighting.Brightness = 2
-    Lighting.Ambient = Color3.fromRGB(120, 128, 150)
-    Lighting.OutdoorAmbient = Color3.fromRGB(90, 100, 125)
-    Lighting.EnvironmentDiffuseScale = 0.4
-    Lighting.FogEnd = 320
-    Lighting.FogColor = Color3.fromRGB(150, 160, 185)
+local DECOY_SLOTS = {
+    { name = "Desk", off = Vector3.new(-14, 0, 8) },
+    { name = "Sofa", off = Vector3.new(0, 0, 14) },
+    { name = "Lamp", off = Vector3.new(15, 0, 8) },
+    { name = "Plant", off = Vector3.new(-17, 0, -6) },
+    { name = "Painting", off = Vector3.new(8, 9, -ROOM_DEPTH / 2 + 0.9) },
+    { name = "Crate", off = Vector3.new(16, 0, -2) },
+    { name = "TV", off = Vector3.new(-9, 0, -10) },
+}
 
-    local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
-    atmosphere.Density = 0.32
-    atmosphere.Offset = 0.1
-    atmosphere.Haze = 1.4
-    atmosphere.Glare = 0.1
-    atmosphere.Color = Color3.fromRGB(199, 205, 220)
-    atmosphere.Decay = Color3.fromRGB(106, 112, 135)
-    atmosphere.Parent = Lighting
+local function decorateRoom(room, config)
+    local origin = config.origin
+
+    -- Scenery (not inspectable).
+    scenery(room, "Floor", origin, Vector3.new(ROOM_WIDTH, 1, ROOM_DEPTH), config.floorColor, Enum.Material.Plastic)
+    scenery(room, "BackWall", origin + Vector3.new(0, WALL_HEIGHT / 2, -ROOM_DEPTH / 2), Vector3.new(ROOM_WIDTH, WALL_HEIGHT, 1), config.wallColor)
+    scenery(room, "FrontWall", origin + Vector3.new(0, WALL_HEIGHT / 2, ROOM_DEPTH / 2), Vector3.new(ROOM_WIDTH, WALL_HEIGHT, 1), config.wallColor)
+    scenery(room, "LeftWall", origin + Vector3.new(-ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0), Vector3.new(1, WALL_HEIGHT, ROOM_DEPTH), config.wallColor)
+    scenery(room, "RightWall", origin + Vector3.new(ROOM_WIDTH / 2, WALL_HEIGHT / 2, 0), Vector3.new(1, WALL_HEIGHT, ROOM_DEPTH), config.wallColor:Lerp(Color3.new(1, 1, 1), 0.25))
+    scenery(room, "Rug", origin + Vector3.new(0, 0.55, 2), Vector3.new(20, 0.1, 16), config.wallColor:Lerp(Color3.new(0, 0, 0), 0.2), Enum.Material.Fabric)
+
+    local sign = scenery(room, "RoomSign", origin + Vector3.new(0, 14, -ROOM_DEPTH / 2 + 0.7), Vector3.new(18, 5, 0.5), Color3.fromRGB(24, 29, 40))
+    labelBillboard(sign, config.title, 4)
+
+    -- Normal decoy objects (inspectable, but flagging them is a mistake).
+    for _, slot in ipairs(DECOY_SLOTS) do
+        buildDecoy(room, slot.name, origin + slot.off)
+    end
 end
 
 local function buildWorld()
-    local okLight, errLight = pcall(applyLighting)
+    local okLight = pcall(function()
+        Lighting.ClockTime = 14
+        Lighting.Brightness = 2
+        Lighting.Ambient = Color3.fromRGB(120, 128, 150)
+        Lighting.OutdoorAmbient = Color3.fromRGB(95, 105, 130)
+        Lighting.EnvironmentDiffuseScale = 0.45
+        Lighting.FogEnd = 400
+
+        local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere") or Instance.new("Atmosphere")
+        atmosphere.Density = 0.28
+        atmosphere.Haze = 1.2
+        atmosphere.Color = Color3.fromRGB(199, 205, 220)
+        atmosphere.Parent = Lighting
+    end)
     if not okLight then
-        warn("[buildWorld] lighting setup failed (continuing): " .. tostring(errLight))
+        warn("[buildWorld] lighting setup skipped")
     end
 
     local oldDemo = Workspace:FindFirstChild("OnichaShootingDemo")
     if oldDemo then
         oldDemo:Destroy()
-    end
-
-    local oldRooms = Workspace:FindFirstChild("Rooms")
-    if oldRooms then
-        oldRooms:Destroy()
     end
 
     table.clear(animatedUpdaters)
@@ -500,8 +458,6 @@ local function buildWorld()
     roomsFolder.Name = "Rooms"
     roomsFolder.Parent = root
 
-    -- Build each room defensively: a bug in one anomaly must not blank the
-    -- whole world. Failures are reported to the Output window.
     for _, config in ipairs(roomConfigs) do
         local room = Instance.new("Model")
         room.Name = string.format("Room%03d", config.id)
@@ -513,63 +469,20 @@ local function buildWorld()
         end
 
         for _, info in ipairs(config.anomalies) do
-            local okAnomaly, errAnomaly = pcall(createAnomaly, room, config, info)
-            if not okAnomaly then
-                warn(string.format("[buildWorld] createAnomaly failed for %s: %s", tostring(info.name), tostring(errAnomaly)))
+            if math.random() < ANOMALY_PRESENCE_CHANCE then
+                local okAnomaly, errAnomaly = pcall(createAnomaly, room, config, info)
+                if not okAnomaly then
+                    warn(string.format("[buildWorld] createAnomaly failed for %s: %s", tostring(info.name), tostring(errAnomaly)))
+                end
             end
         end
     end
 end
 
--- Dim a whole anomaly model and reveal its "Found!" badge.
-local function markModelFound(model)
-    if not model then
-        return
-    end
-    for _, p in ipairs(model:GetDescendants()) do
-        if p:IsA("BasePart") and p:GetAttribute("IsAnomaly") then
-            local base = p:GetAttribute("BaseTransparency") or 0
-            p.Transparency = math.clamp(base + 0.45, 0, 0.85)
-            p:SetAttribute("Found", true)
-        end
-    end
-    local highlight = model:FindFirstChild("Marker")
-    if highlight and highlight:IsA("Highlight") then
-        highlight.Enabled = false
-    end
-    if model.PrimaryPart then
-        local sparkles = model.PrimaryPart:FindFirstChild("FoundSparkles")
-        if sparkles and sparkles:IsA("ParticleEmitter") then
-            sparkles:Emit(26)
-        end
-        local badge = model.PrimaryPart:FindFirstChild("FoundLabel")
-        if badge then
-            badge.Enabled = true
-        end
-    end
-end
-
-local function resetAllAnomalies()
-    local root = Workspace:FindFirstChild("OnichaShootingDemo")
-    if not root then
-        return
-    end
-    for _, inst in ipairs(root:GetDescendants()) do
-        if inst:IsA("BasePart") and inst:GetAttribute("IsAnomaly") then
-            inst.Transparency = inst:GetAttribute("BaseTransparency") or 0
-            inst:SetAttribute("Found", false)
-        elseif inst:IsA("Highlight") and inst.Name == "Marker" then
-            inst.Enabled = false
-        elseif inst:IsA("BillboardGui") and inst.Name == "FoundLabel" then
-            inst.Enabled = false
-        end
-    end
-end
-
 local function spawnForRoom(roomId)
-    local index = math.clamp(tonumber(roomId) or 1, 1, #roomConfigs)
+    local index = math.clamp(tonumber(roomId) or 1, 1, ROOM_COUNT)
     local origin = roomConfigs[index].origin
-    return CFrame.new(origin + Vector3.new(0, 5, 20), origin + Vector3.new(0, 3, -20))
+    return CFrame.new(origin + Vector3.new(0, 5, 18), origin + Vector3.new(0, 4, -20))
 end
 
 local function moveCharacterToRoom(player, roomId)
@@ -581,127 +494,14 @@ local function moveCharacterToRoom(player, roomId)
 end
 
 local function initPlayer(player)
-    local save = SaveService:Load(player)
-    if RunService:IsStudio() then
-        save.currentRoom = 1
-    end
-
-    CoinService:InitPlayer(player, save.coins)
-    RoomService:InitPlayer(player, save.currentRoom)
-    UpgradeService:InitPlayer(player, save.upgrades)
-
     player.CharacterAdded:Connect(function()
-        task.wait(0.25)
-        moveCharacterToRoom(player, RoomService:GetCurrentRoom(player))
+        task.wait(0.3)
+        moveCharacterToRoom(player, 1)
     end)
-
-    UIMessageEvent:FireClient(player, {
-        kind = "RoomStart",
-        text = "Find 3 odd things.",
-        room = RoomService:GetCurrentRoom(player),
-    })
-end
-
-local function awardAnomaly(player, roomId, anomalyName, anomalyInstance, skipDistanceCheck)
-    if not RoomService.State[player] then
-        initPlayer(player)
+    if player.Character then
+        moveCharacterToRoom(player, 1)
     end
-
-    if not skipDistanceCheck and AntiExploitService:IsOnCooldown(player, "find") then
-        return
-    end
-    if not AntiExploitService:ValidateAnomalyRequest(anomalyInstance) then
-        return
-    end
-    if not skipDistanceCheck and not AntiExploitService:IsPlayerNearInstance(player, anomalyInstance, 120) then
-        return
-    end
-
-    local canonicalRoomId = tonumber(anomalyInstance:GetAttribute("RoomId")) or 1
-    local canonicalAnomalyName = anomalyInstance:GetAttribute("AnomalyName") or anomalyInstance.Name
-    if canonicalRoomId ~= roomId or canonicalAnomalyName ~= anomalyName then
-        return
-    end
-
-    local first, count = RoomService:MarkFound(player, roomId, canonicalAnomalyName)
-    if not first then
-        return
-    end
-
-    local reward, isRare = AnomalyService:GetReward(canonicalAnomalyName)
-    CoinService:AddCoins(player, reward)
-    markModelFound(anomalyInstance:FindFirstAncestorOfClass("Model"))
-
-    UIMessageEvent:FireClient(player, {
-        kind = "Found",
-        text = "Found! +" .. tostring(reward),
-        found = count,
-        isRare = isRare,
-    })
-
-    if RoomService:IsRoomCleared(player, roomId) then
-        if roomId >= #roomConfigs then
-            CoinService:AddCoins(player, 100)
-            UIMessageEvent:FireClient(player, {
-                kind = "GameComplete",
-                text = "All rooms clear! +100",
-            })
-        else
-            CoinService:AddCoins(player, 50)
-            local nextRoom = RoomService:AdvanceRoom(player)
-            RoomClearedEvent:FireClient(player, roomId, nextRoom)
-            UIMessageEvent:FireClient(player, {
-                kind = "Clear",
-                text = "Room clear! +50",
-                room = nextRoom,
-            })
-            task.delay(1.0, function()
-                moveCharacterToRoom(player, nextRoom)
-            end)
-        end
-    end
-end
-
-local function hookServerAnomalyClick(instance)
-    if not instance:IsA("BasePart") then
-        return
-    end
-    if instance:GetAttribute("IsAnomaly") ~= true then
-        return
-    end
-    if serverClickHooked[instance] then
-        return
-    end
-
-    local click = instance:FindFirstChildOfClass("ClickDetector") or Instance.new("ClickDetector")
-    click.MaxActivationDistance = 120
-    click.Parent = instance
-    serverClickHooked[instance] = true
-
-    click.MouseClick:Connect(function(player)
-        local roomId = instance:GetAttribute("RoomId") or 1
-        local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
-        awardAnomaly(player, roomId, anomalyName, instance, true)
-    end)
-
-    instance.Touched:Connect(function(hit)
-        local character = hit.Parent
-        local player = character and Players:GetPlayerFromCharacter(character)
-        if not player then
-            return
-        end
-
-        local key = tostring(player.UserId) .. ":" .. instance:GetFullName()
-        local now = os.clock()
-        if serverTouchCooldown[key] and now - serverTouchCooldown[key] < 0.6 then
-            return
-        end
-        serverTouchCooldown[key] = now
-
-        local roomId = instance:GetAttribute("RoomId") or 1
-        local anomalyName = instance:GetAttribute("AnomalyName") or instance.Name
-        awardAnomaly(player, roomId, anomalyName, instance, true)
-    end)
+    UIMessageEvent:FireClient(player, { kind = "WorldReady", rooms = ROOM_COUNT })
 end
 
 local okWorld, errWorld = pcall(buildWorld)
@@ -725,53 +525,10 @@ for _, player in ipairs(Players:GetPlayers()) do
     task.spawn(initPlayer, player)
 end
 
-AnomalyFoundEvent.OnServerEvent:Connect(function(player, roomId, anomalyName, anomalyInstance)
-    awardAnomaly(player, roomId, anomalyName, anomalyInstance, false)
-end)
-
-for _, descendant in ipairs(Workspace:GetDescendants()) do
-    hookServerAnomalyClick(descendant)
-end
-Workspace.DescendantAdded:Connect(hookServerAnomalyClick)
-
-GenerateAnomalyEvent.OnServerEvent:Connect(function(player)
-    if AntiExploitService:IsOnCooldown(player, "generate") then
-        return
-    end
-    UIMessageEvent:FireClient(player, { kind = "Warn", text = "Generator coming soon." })
-end)
-
 ReplayEvent.OnServerEvent:Connect(function(player)
-    if AntiExploitService:IsOnCooldown(player, "replay") then
-        return
+    pcall(buildWorld)
+    for _, p in ipairs(Players:GetPlayers()) do
+        moveCharacterToRoom(p, 1)
+        UIMessageEvent:FireClient(p, { kind = "WorldReady", rooms = ROOM_COUNT })
     end
-    RoomService:ResetPlayer(player)
-    resetAllAnomalies()
-    moveCharacterToRoom(player, 1)
-    UIMessageEvent:FireClient(player, {
-        kind = "Replay",
-        text = "New hunt! Find 3 odd things.",
-        room = 1,
-    })
-end)
-
-PurchaseUpgradeEvent.OnServerEvent:Connect(function(player, upgradeId)
-    if AntiExploitService:IsOnCooldown(player, "upgrade") then
-        return
-    end
-    local ok, info = UpgradeService:Purchase(player, upgradeId, CoinService)
-    UIMessageEvent:FireClient(player, {
-        kind = ok and "Upgrade" or "Warn",
-        text = ok and (info.displayName .. " purchased!") or ("Purchase failed: " .. tostring(info)),
-    })
-end)
-
-Players.PlayerRemoving:Connect(function(player)
-    SaveService:Save(player, {
-        coins = CoinService:GetCoins(player),
-        currentRoom = RoomService:GetCurrentRoom(player),
-        upgrades = UpgradeService.Purchased[player] or {},
-    })
-    RoomService:CleanupPlayer(player)
-    UpgradeService:CleanupPlayer(player)
 end)
